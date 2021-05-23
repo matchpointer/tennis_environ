@@ -14,11 +14,6 @@ import dba
 # (sex, bettor_id) -> OrderedDefaultDict{year_weeknum -> [DbOffer,...]}
 dboffers_dict = defaultdict(lambda: defaultdict(list))
 
-""" 
-oncourt db odds.ID_B_O = 1 это марафон, т.к. отображается в GUI в основном именно он,
-                           и там четверть ставок тоталов с целочисленной линией.
-           odds.ID_B_O = 2 это pinnacle там тоталов нет почти (130, but it was years ago).
-"""
 PINNACLE_ID = 2
 MARATHON_ID = 1
 
@@ -120,7 +115,6 @@ def _initialize_sex(sex, min_date, max_date, bettor_id):
 class SimpleTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # initialize(sex='wta', bettor_id=PINNACLE_ID, min_date=datetime.date(2017,1,1))
         initialize(sex="wta", bettor_id=MARATHON_ID, min_date=datetime.date(2017, 1, 1))
         initialize(sex="atp", bettor_id=MARATHON_ID, min_date=datetime.date(2018, 1, 1))
 
@@ -133,13 +127,6 @@ class SimpleTest(unittest.TestCase):
             bettor_id=MARATHON_ID,
         )
         self.assertTrue(db_offer is not None)
-
-    #   def test_nara_putintseva_tokio_2017(self):
-    #       db_offer = self.find_dboffer(sex='wta', tour_id=11150, fst_plr_id=8353,
-    #                                    snd_plr_id=12390, bettor_id=PINNACLE_ID)
-    #       self.assertTrue(db_offer is not None)
-    #       self.assertTrue(abs(db_offer.win_coefs.first_coef - 1.813) < 0.001)
-    #       self.assertTrue(abs(db_offer.win_coefs.second_coef - 2.09) < 0.001)
 
     def test_diyas_kvitova_newhaven_2018(self):
         db_offer = self.find_dboffer(

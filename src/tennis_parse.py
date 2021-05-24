@@ -278,6 +278,12 @@ class AbbrNameTest(unittest.TestCase):
             self.assertTrue(plr.ident is not None)
             self.assertEqual(plr.name, "Elena Rybakina")
 
+        plr = identify_player("FS", "wta", "Chirico L.", cou="USA")
+        self.assertTrue(plr is not None)
+        if plr is not None:
+            self.assertTrue(plr.ident is not None)
+            self.assertEqual(plr.name, "Louisa Chirico")
+
         plr = identify_player("FS", "wta", "Fernandez L. A.", cou="CAN")
         self.assertTrue(plr is not None)
         if plr is not None:
@@ -308,10 +314,7 @@ class AbbrNameTest(unittest.TestCase):
         self.assertEqual(
             AbbrName("McHale C.").find_player(self.players_wta).name, "Christina Mchale"
         )
-        self.assertEqual(
-            AbbrName("Soler-Espinosa S.").find_player(self.players_wta).name,
-            "Silvia Soler-Espinosa",
-        )
+
         self.assertEqual(
             AbbrName("Begu I.-C.").find_player(self.players_wta).name,
             "Irina-Camelia Begu",
@@ -328,10 +331,6 @@ class AbbrNameTest(unittest.TestCase):
         self.assertEqual(
             AbbrName("Pliskova Ka.").find_player(self.players_wta).name,
             "Karolina Pliskova",
-        )
-        self.assertEqual(
-            AbbrName("Rodionova An.").find_player(self.players_wta).name,
-            "Anastasia Rodionova",
         )
 
     def test_atp_find(self):

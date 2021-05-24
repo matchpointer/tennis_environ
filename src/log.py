@@ -68,7 +68,7 @@ def debug(text):
 
 def warn(text):
     __check_logger()
-    logger.warn(text)
+    logger.warning(text)
 
 
 def error(text, exception=False):

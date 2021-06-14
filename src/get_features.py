@@ -532,7 +532,7 @@ tail_tours_from_sex = {}  # sex -> [tail_tours]
 
 
 def init_tail_tours(sex):
-    tail_tours_from_sex[sex] = weeked_tours.tail_tours(sex, tail_weeks=2)
+    tail_tours_from_sex[sex] = weeked_tours.tail_tours(sex)
     if not tail_tours_from_sex[sex]:
         log.error("fail init_tail_tours sex: {}".format(sex))
 

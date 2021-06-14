@@ -721,10 +721,10 @@ class AlertScEqualSetend(AlertScEqual):
             return None
         if self.back_srv:
             proba = res.fst_proba if fst_srv else res.snd_proba
-            lay_ratio = res.snd_wl.value
+            lay_ratio = res.snd_wl.ratio
         else:
             proba = res.snd_proba if fst_srv else res.fst_proba
-            lay_ratio = res.fst_wl.value
+            lay_ratio = res.fst_wl.ratio
         if (proba < self.min_proba) or (lay_ratio > self.max_lay_ratio):
             return None
         return proba

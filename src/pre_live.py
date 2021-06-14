@@ -58,7 +58,7 @@ except ImportError:
     automate2 = None
 
 DEBUG_MODE = False
-DEBUG_MATCH_NAME = "Dodin O. - Hibino N."
+DEBUG_MATCH_NAME = ""  # sample: "Samsonova L. - Konjuh A."
 
 
 # (sex, tour_name) -> (tour_id, level, surface)
@@ -267,7 +267,7 @@ class MatchDataScript(Script):
                     event.tour_info.surface = surface
                     event.define_features()
                     tour = co.find_first(
-                        weeked_tours.tail_tours(event.sex, tail_weeks=2),
+                        weeked_tours.tail_tours(event.sex),
                         lambda t: t.ident == event.tour_id,
                     )
                     if tour is not None:
@@ -285,7 +285,7 @@ class MatchDataScript(Script):
                     event.define_level()
                     if event.tour_info is not None and event.tour_id is not None:
                         tour = co.find_first(
-                            weeked_tours.tail_tours(event.sex, 2),
+                            weeked_tours.tail_tours(event.sex),
                             lambda t: t.ident == event.tour_id,
                         )
                         if tour is not None:

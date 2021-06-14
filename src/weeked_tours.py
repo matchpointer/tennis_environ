@@ -158,7 +158,7 @@ def year_weeknum_iter(sex):
 use_tail_tours_cache = False
 
 
-def tail_tours(sex, tail_weeks):
+def tail_tours(sex, tail_weeks=2):
     if use_tail_tours_cache and (sex, tail_weeks) in tail_tours.cache:
         return tail_tours.cache[(sex, tail_weeks)]
     result = []

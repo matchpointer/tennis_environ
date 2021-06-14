@@ -7,7 +7,6 @@ from functools import cmp_to_key
 import unittest
 from contextlib import closing
 
-import stopwatch
 import common as co
 import log
 import file_utils as fu
@@ -474,13 +473,13 @@ class Tournament(object):
 class SqlBuilder(object):
     Row = namedtuple(
         "Row",
-        (
-            "rnd_txt rnd_id surf_txt tour_id tour_name "
-            + "tour_rank tour_dt tour_money tour_cou "
-            + "fst_plr_id fst_plr_name fst_plr_dt fst_plr_cou "
-            + "snd_plr_id snd_plr_name snd_plr_dt snd_plr_cou "
-            + "score_txt match_dt"
-        ),
+        [
+            "rnd_txt", "rnd_id", "surf_txt", "tour_id", "tour_name",
+            "tour_rank", "tour_dt", "tour_money", "tour_cou",
+            "fst_plr_id", "fst_plr_name", "fst_plr_dt", "fst_plr_cou",
+            "snd_plr_id", "snd_plr_name", "snd_plr_dt", "snd_plr_cou",
+            "score_txt", "match_dt"
+        ],
     )
 
     def __init__(
@@ -849,7 +848,6 @@ def mix_unioned_tours(
     return tours
 
 
-@stopwatch.clockit
 def week_splited_tours(
     sex,
     todaymode=False,
@@ -1059,7 +1057,6 @@ def split_tour_by_weeks(tour):
     return result
 
 
-@stopwatch.clockit
 def tours_from_ywn_dict(sex, min_date=None, max_date=None, with_bets=True):
     tours_from_yearweeknum = defaultdict(list)
     for tour in tours_generator(

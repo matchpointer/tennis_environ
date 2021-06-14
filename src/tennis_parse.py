@@ -108,7 +108,7 @@ class AbbrName(object):
             for plr_lexem in player_lexems:
                 if (
                     last_part_low not in AbbrName.last_prefixes
-                    and wards.resemble_wards_err2(last_part_low, plr_lexem)
+                    and wards.resemble_words_err2(last_part_low, plr_lexem)
                 ):
                     ok_length += len(last_part_low)
         return ok_length >= 4 or (

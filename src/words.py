@@ -52,7 +52,7 @@ class SyllabledName:
                 and other.parts[i] in self.synonym_prefixes
             ):
                 continue
-            if not resemble_wards(
+            if not resemble_words(
                 self.parts[i], other.parts[i], max_errors=1, ignore_case=False
             ):
                 return False
@@ -66,7 +66,7 @@ class SyllabledName:
         elif isinstance(other, str):
             if self.name == other:
                 return True
-            return resemble_wards(self.name, other, max_errors=1, ignore_case=False)
+            return resemble_words(self.name, other, max_errors=1, ignore_case=False)
         raise co.TennisError(
             "bad compare {} and {}".format(self.__class__.__name__, type(other))
         )
@@ -89,9 +89,9 @@ class SyllabledName:
     __nonzero__ = __bool__
 
 
-def resemble_wards_err2(first_ward, second_ward, ignore_case=False):
-    size1st = len(first_ward)
-    size2nd = len(second_ward)
+def resemble_words_err2(first_word, second_word, ignore_case=False):
+    size1st = len(first_word)
+    size2nd = len(second_word)
     if abs(size1st - size2nd) > 2:
         return False
     max_errors = 1
@@ -99,35 +99,35 @@ def resemble_wards_err2(first_ward, second_ward, ignore_case=False):
         max_errors = 0
     if max(size1st, size2nd) >= 9:
         max_errors = 2
-    return resemble_wards(
-        first_ward, second_ward, max_errors=max_errors, ignore_case=ignore_case
+    return resemble_words(
+        first_word, second_word, max_errors=max_errors, ignore_case=ignore_case
     )
 
 
-def resemble_wards(first_ward, second_ward, max_errors=0, ignore_case=False):
-    ward1st = first_ward.lower() if ignore_case else first_ward
-    ward2nd = second_ward.lower() if ignore_case else second_ward
-    size1st = len(ward1st)
-    size2nd = len(ward2nd)
+def resemble_words(first_word, second_word, max_errors=0, ignore_case=False):
+    word1st = first_word.lower() if ignore_case else first_word
+    word2nd = second_word.lower() if ignore_case else second_word
+    size1st = len(word1st)
+    size2nd = len(word2nd)
     if min(size1st, size2nd) <= 5:
-        return ward1st == ward2nd
+        return word1st == word2nd
     if size1st == size2nd:
-        err_count = errors_count(ward1st, ward2nd)
+        err_count = errors_count(word1st, word2nd)
         return err_count <= max_errors
     elif size1st == (size2nd + 1) and max_errors >= 1:
-        err_count = errors_count_after_symb_del(ward1st, ward2nd)
+        err_count = errors_count_after_symb_del(word1st, word2nd)
         return err_count <= (max_errors - 1)
     elif size2nd == (size1st + 1) and max_errors >= 1:
-        err_count = errors_count_after_symb_del(ward2nd, ward1st)
+        err_count = errors_count_after_symb_del(word2nd, word1st)
         return err_count <= (max_errors - 1)
     else:
         return False
 
 
-def errors_count(ward1st, ward2nd):
+def errors_count(word1st, word2nd):
     err_count = 0
-    for i in range(len(ward1st)):
-        if ward1st[i] != ward2nd[i]:
+    for i in range(len(word1st)):
+        if word1st[i] != word2nd[i]:
             err_count += 1
     return err_count
 

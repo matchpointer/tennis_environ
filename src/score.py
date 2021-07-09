@@ -1380,15 +1380,17 @@ def decided_tiebreak(
 
     if "Wildcard" in tour_name and "Australian Open" in tour_name:
         return ao_wildcard_tiebreak()
-    if "Wimbledon" in tour_name:
-        return year >= 2019 if sex == "atp" else False
     if "Olympics" in tour_name:
         return year >= 2016
 
     if qualification is None:
         return None
 
-    if "French Open" in tour_name:
+    if "Wimbledon" in tour_name:
+        if qualification:
+            return False
+        return year >= 2019 if sex == "atp" else False
+    elif "French Open" in tour_name:
         return year >= 2017 and qualification
     elif "Australian Open" in tour_name:
         if year >= 2019:

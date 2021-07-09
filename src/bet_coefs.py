@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 import copy
 from collections import defaultdict
-import unittest
 from contextlib import closing
 
 import log
-import common as co
 import tennis_time as tt
 import tennis
 import bet
@@ -112,61 +110,6 @@ def _initialize_sex(sex, min_date, max_date, bettor_id):
             dboffers_dict[(sex, bettor_id)][year_weeknum].append(dboffer)
 
 
-class SimpleTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        initialize(sex="wta", bettor_id=MARATHON_ID, min_date=datetime.date(2017, 1, 1))
-        initialize(sex="atp", bettor_id=MARATHON_ID, min_date=datetime.date(2018, 1, 1))
-
-    def test_tsitsipas_dzumhur_toronto_2018(self):
-        db_offer = self.find_dboffer(
-            sex="atp",
-            tour_id=14752,
-            fst_plr_id=30470,
-            snd_plr_id=13447,
-            bettor_id=MARATHON_ID,
-        )
-        self.assertTrue(db_offer is not None)
-
-    def test_diyas_kvitova_newhaven_2018(self):
-        db_offer = self.find_dboffer(
-            sex="wta",
-            tour_id=11794,
-            fst_plr_id=10394,
-            snd_plr_id=8234,
-            bettor_id=MARATHON_ID,
-        )
-        self.assertTrue(db_offer is not None)
-
-    def test_wang_muguruza_hongkong_2018(self):
-        db_offer = self.find_dboffer(
-            sex="wta",
-            tour_id=11805,
-            fst_plr_id=8531,
-            snd_plr_id=10633,
-            bettor_id=MARATHON_ID,
-        )
-        self.assertTrue(db_offer is not None)
-        self.assertTrue(db_offer.win_coefs)
-
-    @staticmethod
-    def find_dboffer(sex, tour_id, fst_plr_id, snd_plr_id, bettor_id):
-        dboffers = db_offers(sex, bettor_id=bettor_id)
-        predicate = lambda o: o.tour_id == tour_id and (
-            (o.first_player_id == fst_plr_id and o.second_player_id == snd_plr_id)
-            or (o.first_player_id == snd_plr_id and o.second_player_id == fst_plr_id)
-        )
-        db_offer = co.find_first(dboffers, predicate)
-        if db_offer is not None:
-            if db_offer.win_coefs:
-                if (
-                    db_offer.first_player_id == snd_plr_id
-                    and db_offer.second_player_id == fst_plr_id
-                ):
-                    db_offer.flip()
-            return db_offer
-
-
 def do_compare_bettors(sex, min_date=None, max_date=None):
     import tournament as trmt
     import stat_cont as st
@@ -178,6 +121,7 @@ def do_compare_bettors(sex, min_date=None, max_date=None):
             iswin = not left_win
         winloss.hit(iswin)
 
+    dba.open_connect()
     tours = list(
         trmt.tours_generator(
             sex,
@@ -241,17 +185,6 @@ def do_compare_bettors(sex, min_date=None, max_date=None):
         progress.put_tour(tour)
         if progress.new_week_begining:
             print("{}".format(tour.year_weeknum))
+    dba.close_connect()
     log.info("wl {}".format(wl))
     log.info("wl2 {}".format(wl2))
-
-
-if __name__ == "__main__":
-    import datetime
-
-    log.initialize(co.logname(__file__, test=True), "debug", None)
-    dba.open_connect()
-
-    # do_compare_bettors(sex='atp', min_date=datetime.date(2008, 1,1))
-
-    unittest.main()
-    dba.close_connect()

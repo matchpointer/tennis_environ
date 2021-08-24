@@ -19,8 +19,6 @@ import tennis_time as tt
 import dba
 import tennis
 import file_utils as fu
-from localbase_players import dict_filename
-
 
 __players_from_sex = defaultdict(set)
 
@@ -190,3 +188,7 @@ if __name__ == "__main__":
     else:
         log.initialize(co.logname(__file__, test=True), "debug", "debug")
         unittest.main()
+
+
+def dict_filename(sex):
+    return "{}/oncourt-{}.json".format(cfg_dir.oncourt_players_dir(), sex)

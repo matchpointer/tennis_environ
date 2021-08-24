@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-import unittest
 from typing import NamedTuple
 
 import log
 import common as co
 import score as sc
 import stat_cont as st
-import dba
 
 
 class Company(NamedTuple):
@@ -149,35 +147,6 @@ class WinCoefs(object):
         prob_first = 1.0 / self.first_coef
         prob_second = 1.0 / self.second_coef
         return (prob_first + prob_second) - 1.0
-
-
-class WinCoefsTest(unittest.TestCase):
-    def test_win_coefs(self):
-        self.assertEqual(WinCoefs(1.9, 1.9).chances(), (0.5, 0.5))
-        self.assertGreater(
-            WinCoefs(1.8, 2.0).chances()[0], WinCoefs(1.8, 2.0).chances()[1]
-        )
-        self.assertLess(
-            WinCoefs(1.86, 1.84).chances()[0], WinCoefs(1.86, 1.84).chances()[1]
-        )
-
-        self.assertLess(
-            WinCoefs(1.86, 1.86).bookmaker_margin(),
-            WinCoefs(1.85, 1.86).bookmaker_margin(),
-        )
-        self.assertEqual(WinCoefs(2.0, 2.0).bookmaker_margin(), 0.0)
-
-        self.assertEqual(not WinCoefs(2.0, 2.0), False)
-        self.assertEqual(not WinCoefs(2.0), True)
-        self.assertEqual(not WinCoefs(), True)
-        self.assertEqual(type(bool(WinCoefs())), bool)
-
-    def test_offer_as_bool(self):
-        offer = Offer(None)
-        offer.win_coefs = WinCoefs(2.0, 2.0)
-        self.assertEqual(not offer, False)
-        self.assertEqual(type(not offer), bool)
-        self.assertEqual(type(bool(offer)), bool)
 
 
 class HandicapCoefs(object):
@@ -750,10 +719,3 @@ def traders_reporting(traders, dirname):
     for trader in traders:
         trader.reporting(dirname)
     log.info("finish traders_reporting")
-
-
-if __name__ == "__main__":
-    log.initialize(co.logname(__file__, test=True), "debug", None)
-    dba.open_connect()
-    unittest.main()
-    dba.close_connect()

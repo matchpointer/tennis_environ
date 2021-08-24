@@ -3,18 +3,14 @@ import datetime
 import pytest
 
 from tour_name import TourName
-import common as co
 from tennis import Player, Round, Level
 from score import Score
 
 from flashscore_match import (
     parse_title_score,
-    TitleScore,
     parse_odds,
-    build_root,
     parse_match_detailed_score,
 )
-from detailed_score_misc import missed_match_points, MatchPointCounts
 
 
 class FakeMatch:
@@ -79,12 +75,6 @@ def test_parse_det_score_gasanova_pavly(fscore_driver):
     if is_attr:
         print(str(match.detailed_score))
         assert match.detailed_score.final_score() == ((1, 6), (7, 6), (7, 6))
-
-        lose_side = co.RIGHT
-        saved_mp = missed_match_points(
-            match.detailed_score, lose_side, best_of_five=False
-        )
-        assert saved_mp == MatchPointCounts(mp_on_srv=1, mp_on_rcv=2)
 
 
 def test_parse_det_score_popko_rola(fscore_driver):
@@ -167,37 +157,3 @@ def test_parse_live_title_score_stages(fscore_driver):
         assert res.inset == (2, 3)
         assert not res.finished
         assert res.setnum == 2
-
-
-# here odds values: (1.57, 2.25)
-pre_match_odds_parent = """
-<div class="oddsWrapper___3ShkMCE">
-    <div class="oddsRow___Ik2HKHW">
-        <div class="oddsRowContent___gXFchnM">
-            <div class="odds___2aJyDCz live-odds ">
-                <div class="bookmaker___2U_yeE5 "><a
-                        href="/bookmaker/16/?sport=2&amp;from=detail&amp;gicc=MD&amp;gisc=MD-CU" title="bet365"
-                        target="_blank" class="link___2cfGV84"><img class="logo___1VsHmha"
-                                                                    src="/res/image/data/bookmakers/30-16.png"
-                                                                    title="bet365" alt="bet365"></img></a></div>
-                <div class="liveBetIcon___3AjBj-V" title="This match will be available for LIVE betting!">
-                </div>
-                <div class="cellWrapper___2KG4ULl" title="1.53[u]1.57[br]Add this match to bet slip on bet365!"><span
-                        class="cell___2ejh55S o_1  "><span class="oddsType___3n54QLL">1</span><span
-                        class="oddsValue___1euLZeq odds-wrap up">1.57</span></span></div>
-                <div class="cellWrapper___2KG4ULl" title="2.37 » 2.25
-Add this match to bet slip on bet365!"><span class="cell___2ejh55S o_2  "><span class="oddsType___3n54QLL">2</span><span
-                        class="oddsValue___1euLZeq odds-wrap down">2.25</span></span></div>
-            </div>
-        </div>
-    </div>
-    <div class="bonus___SZCjQPv" style="background-color: rgb(1, 123, 91);"><a class="link___1tMC5YI"
-                                                                               href="/bookmaker/16/?from=detail-bonus&amp;sport=2&amp;gicc=MD&amp;gisc=MDCU&amp;bonusId=27"
-                                                                               target="_blank"
-                                                                               style="color: rgb(255, 255, 255);">100%
-        bonus up to €50 / €100</a>
-        <div class="description___26h6Yk5" style="color: rgb(255, 255, 255);">Check bet365.com for latest offers and
-            details. Geo-variations and T&amp;Cs apply. 18+
-        </div>
-    </div>
-</div>"""

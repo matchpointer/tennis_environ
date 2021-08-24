@@ -160,4 +160,4 @@ def getlist_notempty_values(
 
 def __check_config():
     if __config is None:
-        initialize_from_file(filename="./tennis.cfg")
+        initialize_from_file(filename="../tennis.cfg")

@@ -172,15 +172,6 @@ _read_player_sized_value.cached_from_sex = {
 }
 
 
-# class ReadFilesTest(unittest.TestCase):
-#     def test_read_players_dict(self):
-#         dct = _read_players_dict(sex='wta')
-#         self.assertTrue(len(dct) > 500)
-#         if dct:
-#             vals = [sv.value for sv in dct.values()]
-#             self.assertTrue(all([(0 <= v <= 1) for v in vals]))
-
-
 def initialize(sex, dbdet, min_date, max_date):
     # max_date = None  # datetime.date(2010, 1, 1)
     if not dba.initialized():
@@ -462,112 +453,6 @@ def do_stat():
         return 1
 
 
-# # -------------- for extern use
-# avg_affect = {
-#     'wta': read_generic_value('wta'),
-#     'atp': read_generic_value('atp'),
-# }
-#
-# above_avg_high_ratio = {
-#     'wta': 0.34,
-#     'atp': 0.28,
-# }
-#
-# min_size = {
-#     'wta': 10,
-#     'atp': 14,
-# }
-#
-#
-# def is_player_affect_high(sex, player_id):
-#     sv = read_sized_value_affect_ratio(sex, player_id)
-#     if sv.size >= min_size[sex]:
-#         return sv.value > high_affect_threshold(sex)
-#
-#
-# def is_player_affect_above_avg(sex, player_id):
-#     sv = read_sized_value_affect_ratio(sex, player_id)
-#     if sv.size >= min_size[sex]:
-#         return sv.value > avg_affect[sex]
-#
-#
-# def high_affect_threshold(sex):
-#     avg_val = avg_affect[sex]
-#     return avg_val + avg_val * above_avg_high_ratio[sex]
-#
-#
-# # ------------------------------ GUI ----------------------------------------
-# # here value_fun is function(key) -> str, where key is left-most entity (aspect)
-# ColumnInfo = namedtuple("ColumnInfo", "title number value_fun value_default")
-#
-#
-# def make_player_columninfo(sex, player_id, title, number, value_default='-'):
-#     def value_function(key):
-#         def get_text_val(sized_value):
-#             if not sized_value:
-#                 return value_default
-#             return co.formated(sized_value.value, sized_value.size, round_digits=2).strip()
-#
-#         sval = read_sized_value_affect_ratio(sex, player_id)
-#         return get_text_val(sval)
-#
-#     def empty_function(key):
-#         return value_default
-#
-#     return ColumnInfo(
-#         title=title,  number=number,
-#         value_fun=value_function if player_id else empty_function,
-#         value_default=value_default
-#     )
-#
-#
-# def make_generic_columninfo(sex, title, number, value_default='-'):
-#     def value_function(key):
-#         result = read_generic_value(sex)
-#         if result is None:
-#             return value_default
-#         return "{0:.2f}".format(result)
-#
-#     return ColumnInfo(title=title, number=number, value_fun=value_function,
-#                       value_default=value_default)
-#
-#
-# class PageBuilderLGR(matchstat.PageBuilder):
-#     """ шаблон для закладки c тремя колонками: left_player, generic, right_player """
-#     def __init__(self, sex, left_player, right_player):
-#         super(PageBuilderLGR, self).__init__()
-#         self.keys.append(ASPECT_UNDER)
-#         self.set_data(sex, left_player, right_player)
-#
-#     def set_data(self, sex, left_player, right_player):
-#         self.columns = [
-#             make_player_columninfo(
-#                 sex, left_player.ident if left_player else None, 'left', 1),
-#             make_generic_columninfo(sex, title='avg', number=2),
-#             make_player_columninfo(
-#                 sex, right_player.ident if right_player else None, 'right', 3)
-#         ]
-#
-#
-# class TielossAffectPageLGR(ttk.Frame):
-#     """ notebook's page (tab) """
-#
-#     def __init__(self, parent, application):
-#         ttk.Frame.__init__(self, parent)  # parent is notebook obj
-#         self.application = application
-#         self.page_builder = PageBuilderLGR(
-#             application.sex(), application.left_player(), application.right_player())
-#         self.page_builder.create_widgets(self)  # fill self with widgets
-#
-#     def estimate(self):
-#         self.page_builder.set_data(
-#             self.application.sex(), self.application.left_player(),
-#             self.application.right_player()
-#         )
-#         self.page_builder.clear(self)
-#         self.page_builder.update(self)
-#
-#
 def parse_command_line_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--stat", action="store_true")

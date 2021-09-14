@@ -1,55 +1,53 @@
 # -*- coding: utf-8 -*-
 import os
-import configparser as cfgparser
+from configparser import ConfigParser
+from typing import Optional
 
-
-__config = None
+_config: Optional[ConfigParser] = None
 
 
 def initialize_from_file(filename):
     if not os.path.isfile(filename):
         raise Exception(__name__ + " can not find config ini file: " + filename)
-    global __config
-    __config = cfgparser.ConfigParser()
-    __config.optionxform = str
-    __config.read([filename])
-
-
-def initialize_from_object(obj):
-    global __config
-    __config = obj
+    global _config
+    _config = ConfigParser()
+    _config.optionxform = str
+    _config.read([filename])
+    length = len(_config)
+    if length <= 1:
+        raise Exception(f"{__name__} bad init(length={length}) from file {filename}")
 
 
 def sections():
-    __check_config()
-    return __config.sections()
+    _check_config()
+    return _config.sections()
 
 
 def has_section(section):
-    __check_config()
-    return __config.has_section(section)
+    _check_config()
+    return _config.has_section(section)
 
 
 def items(section):
-    __check_config()
-    return __config.items(section)
+    _check_config()
+    return _config.items(section)
 
 
 def has_option(section, option):
-    __check_config()
-    return __config.has_option(section, option)
+    _check_config()
+    return _config.has_option(section, option)
 
 
 def setval(section, option, value):
-    __check_config()
-    __config.set(section, option, value)
+    _check_config()
+    _config.set(section, option, value)
 
 
 def getval(section, option, predicate=None, predicate_desc="", default_value=None):
-    __check_config()
+    _check_config()
     try:
-        if __config.has_section(section) and __config.has_option(section, option):
-            value = __config.get(section, option)
+        if _config.has_section(section) and _config.has_option(section, option):
+            value = _config.get(section, option)
             if predicate is not None:
                 if not predicate(value):
                     raise ValueError("broken constraint: '{}'".format(predicate_desc))
@@ -62,10 +60,10 @@ def getval(section, option, predicate=None, predicate_desc="", default_value=Non
 
 
 def getint(section, option, predicate=None, predicate_desc="", default_value=None):
-    __check_config()
+    _check_config()
     try:
-        if __config.has_section(section) and __config.has_option(section, option):
-            value = __config.getint(section, option)
+        if _config.has_section(section) and _config.has_option(section, option):
+            value = _config.getint(section, option)
             if predicate is not None:
                 if not predicate(value):
                     raise ValueError("broken constraint: '{}'".format(predicate_desc))
@@ -80,10 +78,10 @@ def getint(section, option, predicate=None, predicate_desc="", default_value=Non
 
 
 def getfloat(section, option, predicate=None, predicate_desc="", default_value=None):
-    __check_config()
+    _check_config()
     try:
-        if __config.has_section(section) and __config.has_option(section, option):
-            value = __config.getfloat(section, option)
+        if _config.has_section(section) and _config.has_option(section, option):
+            value = _config.getfloat(section, option)
             if predicate is not None:
                 if not predicate(value):
                     raise ValueError("constraint is boken: '{}'".format(predicate_desc))
@@ -98,10 +96,10 @@ def getfloat(section, option, predicate=None, predicate_desc="", default_value=N
 
 
 def getboolean(section, option, default_value=None):
-    __check_config()
+    _check_config()
     try:
-        if __config.has_section(section) and __config.has_option(section, option):
-            return __config.getboolean(section, option)
+        if _config.has_section(section) and _config.has_option(section, option):
+            return _config.getboolean(section, option)
         return default_value
     except ValueError as err:
         raise ValueError(
@@ -119,10 +117,10 @@ def getlist(
     item_filter_fun=lambda i: True,
     default_value=None,
 ):
-    __check_config()
+    _check_config()
     try:
-        if __config.has_section(section) and __config.has_option(section, option):
-            value = __config.get(section, option)
+        if _config.has_section(section) and _config.has_option(section, option):
+            value = _config.get(section, option)
             return [
                 item_final_fun(item)
                 for item in value.split(delimiter)
@@ -158,6 +156,6 @@ def getlist_notempty_values(
     )
 
 
-def __check_config():
-    if __config is None:
+def _check_config():
+    if _config is None:
         initialize_from_file(filename="../tennis.cfg")

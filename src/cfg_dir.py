@@ -55,10 +55,6 @@ def bin_dir():
     return cf.getval("dirs", "bin")
 
 
-def itf_dir():
-    return os.path.join(bin_dir(), "itf")
-
-
 def pre_live_dir(name):
     return os.path.join(bin_dir(), "pre_live", name)
 
@@ -115,3 +111,7 @@ def lines_dir(company_name, sport="Tennis"):
 
 def detailed_score_dir():
     return os.path.join(bin_dir(), "detailed_score_db")
+
+
+def predicts_db_dir():
+    return os.path.join(bin_dir(), "predicts_db")

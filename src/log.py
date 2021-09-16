@@ -1,12 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
-import time
 import logging
 import logging.handlers
-import unittest
-
-import file_utils as fu
-
 
 LEVELS = {
     "debug": logging.DEBUG,
@@ -50,7 +45,9 @@ def initialize(filename, file_level="info", console_level=None):
 
     if console_level:
         console_handler = logging.StreamHandler()
-        console_formatter = logging.Formatter("[%(levelname)s] %(message)s")
+        console_formatter = logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%d.%m.%Y %H:%M:%S"
+        )
         console_handler.setFormatter(console_formatter)
         console_handler.setLevel(LEVELS[console_level])
         logger.addHandler(console_handler)
@@ -110,34 +107,3 @@ def __min_level_code(levels):
         ((logging.CRITICAL + 1) if level is None else LEVELS[level]) for level in levels
     ]
     return min(level_codes)
-
-
-class LogRotatingTest(unittest.TestCase):
-    DIRNAME = "./logingtest"
-    SHORTNAME = "test.log"
-    prev_session_files_count = 0
-
-    @classmethod
-    def setUpClass(cls):
-        fu.ensure_folder(cls.DIRNAME)
-        files = fu.find_files_in_folder(cls.DIRNAME)
-        cls.prev_session_files_count = len(files)
-        initialize(cls.DIRNAME + "/" + cls.SHORTNAME)
-
-    @classmethod
-    def tearDownClass(cls):
-        global logger
-        del logger
-        logger = None
-
-    def test_rotating(self):
-        """должно быть на 1 больше файлов чем после предыдущих запусков"""
-        info(str(time.asctime()))
-        info(str("\xc3\xb4", "utf-8"))
-        flush()
-        files = fu.find_files_in_folder(LogRotatingTest.DIRNAME)
-        self.assertEqual(len(files), LogRotatingTest.prev_session_files_count + 1)
-
-
-if __name__ == "__main__":
-    unittest.main()

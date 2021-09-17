@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-import unittest
 import datetime
 import copy
+import time
 from collections import defaultdict
 from typing import Optional, Tuple
 import re
@@ -9,11 +9,10 @@ import re
 from lxml import etree
 import lxml.html
 
-import dba
 import common as co
 import log
 import oncourt_players
-import tennis
+from tennis import Surface, Level
 import tennis_time as tt
 import tennis_parse
 import weeked_tours
@@ -29,10 +28,10 @@ from live import (
 )
 from oncourt_db import MAX_WTA_FUTURE_MONEY
 from geo import city_in_europe
-import tour_name
+from tour_name import TourName
 
-SKIP_SEX = None
-SKIP_FINAL_RESULT_ONLY = True
+SKIP_SEX = None  # can be assigned for debug
+SKIP_FINAL_RESULT_ONLY = True  # i.e. FRO - without point-by-point
 FAKE_TOUR_NAME = "Others matches"
 
 
@@ -156,7 +155,7 @@ def make_live_tour_event(elements, match_status, skip_levels, current_date, star
 
 def make_live_match(element, live_event, current_date, match_status: MatchStatus):
     def is_final_result_only():
-        # score (not point by point) will be after finish.
+        # score (not point by point) will be after match finish.
         # after finish we can not determinate that is was state FRO.
         el = co.find_first_xpath(
             element, "child::div[@class='event__time']/div[@title='Final result only.']"
@@ -230,9 +229,10 @@ def make_live_match(element, live_event, current_date, match_status: MatchStatus
     def ingame_score():
         def get_xpath(is_left):
             return (
-                "child::div[contains(@class,'event__part--{}') and "
-                + "contains(@class,'event__part--6')]"
-            ).format("home" if is_left else "away")
+                f"child::div[contains(@class,'event__part--"
+                f"{'home' if is_left else 'away'}') and "
+                f"contains(@class,'event__part--6')]"
+            )
 
         fst_el = co.find_first_xpath(element, get_xpath(is_left=True))
         snd_el = co.find_first_xpath(element, get_xpath(is_left=False))
@@ -243,11 +243,11 @@ def make_live_match(element, live_event, current_date, match_status: MatchStatus
 
     def make_score(retired):
         def make_side_scr_elements(is_left):
-            inclass_txt = "event__part--{}".format("home" if is_left else "away")
+            inclass_txt = f"event__part--{'home' if is_left else 'away'}"
             xpath_txt = (
-                "child::div[contains(@class, '{}') and "
-                + "not(contains(@class, 'event__part--6'))]"
-            ).format(inclass_txt)
+                f"child::div[contains(@class, '{inclass_txt}') "
+                f"and not(contains(@class, 'event__part--6'))]"
+            )
             return element.xpath(xpath_txt)  # elements
 
         pairs = zip(
@@ -414,12 +414,13 @@ def itf_atp_money_tourname(text):
 
 
 def split_ontwo_enclosed(text: str, delim_op: str, delim_cl: str):
+    """ text 'ab(c)-d(ef)' return ('ab(c)-d', 'ef') where delim_op='(', delim_cl=')' """
     if text.endswith(delim_cl):
         pos = text.rfind(delim_op)
         if pos >= 0:
             return (
                 text[:pos].strip(),
-                text[pos + len(delim_op) : len(text) - len(delim_cl)].strip(),
+                text[pos + len(delim_op): len(text) - len(delim_cl)].strip(),
             )
     return text.strip(), ""
 
@@ -464,29 +465,35 @@ class TourInfoFlashscore(TourInfo):
                 "French Open" in body_part
                 or "Wimbledon" in body_part
                 or "U.S. Open" in body_part
+                or "US Open" in body_part
                 or "Australian Open" in body_part
             )
         )
         self.qualification = "Qualification" in qual_part and not self.teams
         self.exhibition = "EXHIBITION" in part_one
         self.itf = part_one.startswith("ITF")
-        self.surface = tennis.Surface(surf_part) if surf_part else None
+        self.surface = Surface(surf_part) if surf_part else None
         self.tour_name, money = self.init_tourname(body_part, desc_part, number)
         self.level = self.__init_level(is_grand_slam, part_one, qual_part, money)
         self.country = country_part
         self.corrections()
 
     def corrections(self):
-        if (
+        surface = sex_tourname_surf_map.get((self.sex, self.tour_name, self.surface))
+        if surface is not None:
+            self.surface = surface
+        elif (
             self.surface == "Hard"
             and (
                 datetime.date.today().month in (12, 1, 2)
-                or datetime.date.today().month == 3
-                and datetime.date.today().day < 20
+                or (
+                    datetime.date.today().month == 3
+                    and datetime.date.today().day < 20
+                )
             )
             and city_in_europe(self.tour_name.name)  # not play hard in winter europe
         ):
-            self.surface = tennis.Surface("Carpet")
+            self.surface = Surface("Carpet")
 
     def init_tourname(self, body_part, desc_part, number):
         def map_to_oncourt():
@@ -511,9 +518,8 @@ class TourInfoFlashscore(TourInfo):
                 body_part = money_tourname[1]
 
         body_part, num = map_to_oncourt()
-        # body_part = trmt.Tournament.name_correction(self.sex, body_part)
         return (
-            tour_name.TourName(name=body_part, desc_name=desc_part, number=num),
+            TourName(name=body_part, desc_name=desc_part, number=num),
             money,
         )
 
@@ -529,27 +535,95 @@ class TourInfoFlashscore(TourInfo):
 
     def __init_level(self, is_grand_slam, part_one, qual_part, money):
         if is_grand_slam:
-            result = tennis.Level("gs")
+            result = Level("gs")
         elif "CHALLENGER" in part_one:
-            result = tennis.Level("chal")
+            result = Level("chal")
         elif "BOYS" in part_one or "GIRLS" in part_one:
-            result = tennis.Level("junior")
+            result = Level("junior")
         elif self.teams:
             if "World Group" in qual_part or "ATP Cup" in self.tour_name.name:
-                result = tennis.Level("teamworld")
+                result = Level("teamworld")
             else:
-                result = tennis.Level("team")
+                result = Level("team")
         elif self.itf:
             if self.sex == "wta" and (
                 (money is not None and money > MAX_WTA_FUTURE_MONEY)
                 or (self.tour_name, self.surface) in wta_chal_tour_surf
             ):
-                result = tennis.Level("chal")
+                result = Level("chal")
             else:
-                result = tennis.Level("future")
+                result = Level("future")
         else:
-            result = tennis.Level("main")
+            result = Level("main")
         return result
+
+
+def make_current_date(root_elem):
+    """current date (in sample below 23 december) lay in webpage as (tail of i):
+    <span class="day today">
+      <span class="h2">
+        <a href="#" onclick="cjs.dic.get(...">
+          <i></i>
+    23/12 Sa</a>
+      </span>
+    </span>
+    """
+    # i_el = co.find_first_xpath(root_elem, "//span[@class='day today']/span/a/i")
+    i_el = co.find_first_xpath(root_elem, "//div[@class='icon icon--calendar']")
+    if i_el is not None:
+        date_txt = i_el.tail
+        if date_txt is not None:
+            date_txt = date_txt.strip()
+            if len(date_txt) >= 5:
+                day_txt, month_txt = date_txt[:5].split(r"/")
+                return datetime.date(
+                    year=datetime.date.today().year,
+                    month=int(month_txt),
+                    day=int(day_txt),
+                )
+
+
+def goto_date(fsdrv, days_ago, start_date):
+    """goto days_ago into past from start_date (today if start_date is None).
+    if daysago > 0 then go to backward, if daysago=-1 then go to forward (+1 day)
+    :returns target_date if ok, or raise TennisError
+    """
+
+    def prev_day_button_coords():
+        # y=695 with advertise. handy measure at Gennady notebook. y=585 without advertise
+        return 1235, 670
+
+    def next_day_button_coords():
+        return 1235 + 184, 670
+
+    def neighbour_day_click(is_backward):
+        import automate2
+
+        if is_backward:
+            x, y = prev_day_button_coords()
+        else:
+            x, y = next_day_button_coords()
+        automate2.press_button((x, y))
+        fsdrv.implicitly_wait(5)
+        time.sleep(5)
+
+    target_date = start_date - datetime.timedelta(days=days_ago)
+    for _ in range(abs(days_ago)):
+        if days_ago >= 0:
+            neighbour_day_click(is_backward=True)
+        else:
+            neighbour_day_click(is_backward=False)
+    fsdrv.implicitly_wait(5)
+    parser = lxml.html.HTMLParser(encoding="utf8")
+    tree = lxml.html.document_fromstring(fsdrv.page(), parser)
+    cur_date = make_current_date(tree)
+    if cur_date != target_date:
+        raise co.TennisError(
+            "target_date {} != cur_date {} days_ago: {}".format(
+                target_date, cur_date, days_ago
+            )
+        )
+    return cur_date
 
 
 wta_chal_tour_surf = set()  # set of (tour_name, surface)
@@ -575,34 +649,9 @@ def initialize(prev_week=False):
             )
 
 
-sex_tourname_surf_map = {  # her in values are more correct surface
-    ("wta", tour_name.TourName("Fukuoka"), tennis.Surface("Hard")): tennis.Surface(
-        "Carpet"
-    ),
-    ("wta", tour_name.TourName("Kurume"), tennis.Surface("Hard")): tennis.Surface(
-        "Carpet"
-    ),
-    ("atp", tour_name.TourName("ATP Cup"), tennis.Surface("Carpet")): tennis.Surface(
-        "Hard"
-    ),
+sex_tourname_surf_map = {  # here in values are more correct surface then flashscore's
+    ("wta", TourName("Chicago"), Surface("Carpet")): Surface("Hard"),
+    ("wta", TourName("Fukuoka"), Surface("Hard")): Surface("Carpet"),
+    ("wta", TourName("Kurume"), Surface("Hard")): Surface("Carpet"),
+    ("atp", TourName("ATP Cup"), Surface("Carpet")): Surface("Hard"),
 }
-
-
-if __name__ == "__main__":
-    log.initialize(
-        co.logname(__file__, test=True), file_level="info", console_level="info"
-    )
-    dba.open_connect()
-    oncourt_players.initialize(yearsnum=1.2)
-
-    min_date = tt.past_monday_date(datetime.date.today()) - datetime.timedelta(days=7)
-    weeked_tours.initialize_sex(
-        "wta", min_date=min_date, max_date=None, with_today=True, with_bets=True
-    )
-    weeked_tours.initialize_sex(
-        "atp", min_date=min_date, max_date=None, with_today=True, with_bets=True
-    )
-    initialize()
-
-    unittest.main()
-    dba.close_connect()

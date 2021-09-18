@@ -19,16 +19,8 @@ from flashscore import (
     TourInfoFlashscore,
     make_events,
     initialize,
-    split_ontwo_enclosed
 )
 from live import MatchStatus
-
-
-class SplitOntwoEnclosedTest(unittest.TestCase):
-    def test_split_ontwo_enclosed(self):
-        text = "ab(c)-d(ef)"
-        p1, p2 = split_ontwo_enclosed(text, delim_op="(", delim_cl=")")
-        self.assertTrue(p1 == "ab(c)-d" and p2 == "ef")
 
 
 class ITFtournameTest(unittest.TestCase):
@@ -173,46 +165,3 @@ if __name__ == "__main__":
 
     unittest.main()
     dba.close_connect()
-
-
-# class TourInfoFlashscoreTeamsTest(unittest.TestCase):
-#     def test_atp_cup(self):
-#         part_one = "ATP - TEAMS"
-#         part_two = "ATP Cup - World Group (World) - Qualification"
-#         obj = TourInfoFlashscore(part_one, part_two)
-#         self.assertEqual("ATP Cup", str(obj.tour_name))
-#
-#     def test_init(self):
-#         part_one = "WTA - SINGLES"
-#         part_two = "Fed Cup - World Group (World) - Qualification"
-#         obj = TourInfoFlashscore(part_one, part_two)
-#         self.assertEqual("Fed Cup", str(obj.tour_name))
-
-
-# ----- Davis Cup, not top (not World Group) event header:
-
-# <div class="event__header">
-#   <div class="event__check"></div>
-#   <div class="icon--flag event__title fl_3473163">TEAMS - MEN:&nbsp;
-#     <span class="event__title--name" title="Davis Cup - Group II (World)">Davis Cup - Group II (World)</span>
-#     <span class="toggleMyLeague 2_9992_QVQVyHNa"></span>
-#   </div>
-#   <a href="#" class="event__info active"></a>
-#   <div class="event__expander icon--expander collapse" title="Hide all matches of this league!"></div>
-# </div>
-
-# Davis Cup, not top (not World Group) team result:
-
-# <div id="g_2_SdN0YX5C" title="Click for match detail!" class="event__match event__match--twoLine">
-#   <div class="event__check"/>
-#   <div class="event__stage">
-#     <div class="event__stage--block">After
-#       <br/>
-# day 1</div>
-#   </div>
-#   <div class="event__participant event__participant--home">Thailand</div>
-#   <div class="event__participant event__participant--away">Philippines</div>
-#   <div class="event__score event__score--home">2</div>
-#   <div class="event__score event__score--away">0</div>
-#   <div class="event__icon icon--info event__icon--slim"/>
-# </div>

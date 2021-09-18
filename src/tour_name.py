@@ -45,7 +45,7 @@ class TourName:
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def __str__(self):
+    def __repr__(self):
         if self.number is None:
             return self.name
         return f"{self.name} {self.number}"

@@ -1,22 +1,30 @@
 # -*- coding: utf-8 -*-
 import time
+import requests
+import gzip
+import io
+from typing import Optional
 
 import betcity_wdriver as bcdrv
 import flashscore_wdriver as fsdrv
-import inet
 import file_utils as fu
 
 
-def wdriver(company_name: str, headless=False, faked=False, random_sleep_max=None):
+def wdriver(company_name: str, headless=False, faked=False):
+    """ company_name 'FS' (flashscore, default now);
+                     'BC' (betcity, not used now)
+        faked: True than try experimental emulation without selenium.
+               faked true mode is not work with flashscore site (selenium needed).
+    """
     if company_name == "BC":
         return (
-            WDriverFaked(bcdrv.start_url(), random_sleep_max)
+            WDriverFaked(bcdrv.start_url())
             if faked
             else WDriverBetcity()
         )
     elif company_name == "FS":
         return (
-            WDriverFaked(fsdrv.start_url(), random_sleep_max)
+            WDriverFaked(fsdrv.start_url())
             if faked
             else WDriverFlashscore(headless=headless)
         )
@@ -26,7 +34,7 @@ class WDriver(object):
     def __init__(self):
         self.drv = None
 
-    def page(self):
+    def page(self) -> Optional[str]:
         if self.drv is not None:
             return self.drv.page_source
 
@@ -63,32 +71,53 @@ class WDriver(object):
 
 
 class WDriverFaked(object):
-    def __init__(self, url, random_sleep_max=None):
-        self.wpage = inet.WebPage(url, random_sleep_max=random_sleep_max)
+    def __init__(self, url):
+        self.url = url
+        self.content = None
 
-    def page(self):
-        return self.wpage.content
+    def _get_session(self):
+        return requests.Session()
+
+    def _download_page(self) -> str:
+        session = self._get_session()
+        with session.get(self.url) as response:
+            response.raise_for_status()
+            gzip_filehandle = gzip.GzipFile(fileobj=io.BytesIO(response.content))
+            return gzip_filehandle.read().decode()
+
+    def _download_page_simple(self) -> str:
+        response = requests.get(self.url)
+        response.encoding = 'utf-8'
+        response.raise_for_status()
+        return response.text
+
+    def _do_download(self):
+        self.content = None
+        self.content = self._download_page_simple()
+
+    def page(self) -> Optional[str]:
+        return self.content
 
     def start(self):
-        self.wpage.refresh()
+        self._do_download()
 
     def stop(self):
         pass
 
     def go_live_page(self):
-        self.wpage.refresh()
+        self._do_download()
 
     def live_page_refresh(self):
-        self.wpage.refresh()
+        self._do_download()
 
     def current_page_refresh(self):
-        self.wpage.refresh()
+        self._do_download()
 
     def is_mobile(self):
-        return False
+        pass
 
     def save_page(self, filename, encoding="utf8"):
-        fu.write(filename=filename, data=self.page(), encoding=encoding)
+        fu.write(filename=filename, data=self.content, encoding=encoding)
 
     def implicitly_wait(self, seconds):
         time.sleep(seconds)
@@ -151,18 +180,3 @@ class WDriverFlashscore(WDriver):
     def current_page_refresh(self):
         fsdrv.current_page_refresh(self.drv)
 
-
-if __name__ == "__main__":
-    drv = wdriver(company_name="FS", faked=False)
-    drv.start()
-    time.sleep(5)
-    page1 = drv.page().strip()
-    h1 = hash(page1)
-    len1 = len(page1)
-    filename = "./fs_test.html"
-    fu.write(filename=filename, data=page1, encoding="utf8")
-    drv.stop()
-    page2 = fu.read(filename=filename, encoding="utf8")
-    h2 = hash(page2)
-    len2 = len(page2)
-    print(f"hash1={h1} len1={len1}\nhash2={h2} len2={len2}")

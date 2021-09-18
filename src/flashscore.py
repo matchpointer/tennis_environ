@@ -30,18 +30,15 @@ from oncourt_db import MAX_WTA_FUTURE_MONEY
 from geo import city_in_europe
 from tour_name import TourName
 
-SKIP_SEX = None  # can be assigned for debug
-SKIP_FINAL_RESULT_ONLY = True  # i.e. FRO - without point-by-point
-FAKE_TOUR_NAME = "Others matches"
+SKIP_SEX = None
+SKIP_FINAL_RESULT_ONLY = True  # events marked as FRO are without point-by-point
 
 
 def make_events_impl(cur_date, tree, match_status, skip_levels):
     tour_events = []
     # div(tour_info), div(match), div(match)..., div(tour_info), div(match)...
     all_divs = list(
-        tree.xpath(
-            ("//div[@class='leagues--live ']/" + "div[@class='sportName tennis']/div")
-        )
+        tree.xpath("//div[@class='leagues--live ']/div[@class='sportName tennis']/div")
     )
     is_events = bool(all_divs)
     start_idx = 0
@@ -74,7 +71,7 @@ def make_events_impl(cur_date, tree, match_status, skip_levels):
         if (start_idx + 1) >= (len(all_divs) - 1):
             break
         idx, head_el = co.find_indexed_first(
-            all_divs[start_idx + 1 :], lambda e: "event__header" in e.get("class")
+            all_divs[start_idx + 1:], lambda e: "event__header" in e.get("class")
         )
         is_events = head_el is not None
         start_idx += 1 + idx
@@ -414,7 +411,7 @@ def itf_atp_money_tourname(text):
 
 
 def split_ontwo_enclosed(text: str, delim_op: str, delim_cl: str):
-    """ text 'ab(c)-d(ef)' return ('ab(c)-d', 'ef') where delim_op='(', delim_cl=')' """
+    """ sample: text 'ab(c)-d(ef)' delim_op='(', delim_cl=')' return ('ab(c)-d', 'ef') """
     if text.endswith(delim_cl):
         pos = text.rfind(delim_op)
         if pos >= 0:
@@ -559,16 +556,6 @@ class TourInfoFlashscore(TourInfo):
 
 
 def make_current_date(root_elem):
-    """current date (in sample below 23 december) lay in webpage as (tail of i):
-    <span class="day today">
-      <span class="h2">
-        <a href="#" onclick="cjs.dic.get(...">
-          <i></i>
-    23/12 Sa</a>
-      </span>
-    </span>
-    """
-    # i_el = co.find_first_xpath(root_elem, "//span[@class='day today']/span/a/i")
     i_el = co.find_first_xpath(root_elem, "//div[@class='icon icon--calendar']")
     if i_el is not None:
         date_txt = i_el.tail
@@ -583,10 +570,10 @@ def make_current_date(root_elem):
                 )
 
 
-def goto_date(fsdrv, days_ago, start_date):
-    """goto days_ago into past from start_date (today if start_date is None).
-    if daysago > 0 then go to backward, if daysago=-1 then go to forward (+1 day)
-    :returns target_date if ok, or raise TennisError
+def goto_date(fsdrv, days_ago, start_date, wait_sec=5):
+    """ goto days_ago into past from start_date (today if start_date is None).
+        if daysago > 0 then go to backward, if daysago=-1 then go to forward (+1 day)
+        :returns target_date if ok, or raise TennisError
     """
 
     def prev_day_button_coords():
@@ -604,7 +591,7 @@ def goto_date(fsdrv, days_ago, start_date):
         else:
             x, y = next_day_button_coords()
         automate2.press_button((x, y))
-        fsdrv.implicitly_wait(5)
+        fsdrv.implicitly_wait(wait_sec)
         time.sleep(5)
 
     target_date = start_date - datetime.timedelta(days=days_ago)
@@ -613,7 +600,7 @@ def goto_date(fsdrv, days_ago, start_date):
             neighbour_day_click(is_backward=True)
         else:
             neighbour_day_click(is_backward=False)
-    fsdrv.implicitly_wait(5)
+    fsdrv.implicitly_wait(wait_sec)
     parser = lxml.html.HTMLParser(encoding="utf8")
     tree = lxml.html.document_fromstring(fsdrv.page(), parser)
     cur_date = make_current_date(tree)

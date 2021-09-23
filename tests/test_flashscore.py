@@ -19,6 +19,7 @@ from flashscore import (
     TourInfoFlashscore,
     make_events,
     initialize,
+    split_ontwo_enclosed
 )
 from live import MatchStatus
 
@@ -74,7 +75,7 @@ class FlashscoreSiteTest(unittest.TestCase):
     fsdrv = None
     page = None
     actual_file_name = "../log/test_flashscore_actual_page.html"
-    match_status = MatchStatus.finished  # other matches will be skip
+    match_status = MatchStatus.finished
 
     @classmethod
     def is_actual_file(cls):
@@ -98,7 +99,10 @@ class FlashscoreSiteTest(unittest.TestCase):
             cls.fsdrv = common_wdriver.wdriver(company_name="FS", faked=False)
             cls.fsdrv.start()
             time.sleep(5)
+            # here possible goto_date:
+            # goto_date(cls.fsdrv, days_ago=7, start_date=datetime.date.today())
             cls.fsdrv.save_page(cls.actual_file_name)
+            # cls.page = cls.fsdrv.page()
 
         cls.read_page_from_file()
         # here possible initialize_players_cache:
@@ -108,6 +112,21 @@ class FlashscoreSiteTest(unittest.TestCase):
     def tearDownClass(cls):
         if cls.fsdrv:
             cls.fsdrv.stop()
+
+    @unittest.skip("not actual")
+    def test_goto_date(self):
+        from flashscore import goto_date
+
+        if self.fsdrv:
+            n_days = 2
+            start_date = datetime.date.today()
+            target_date = goto_date(self.fsdrv, days_ago=n_days, start_date=start_date)
+            if n_days >= 0:
+                tdelta = start_date - target_date
+                self.assertEqual(datetime.timedelta(days=n_days), tdelta)
+            else:
+                tdelta = target_date - start_date
+                self.assertEqual(datetime.timedelta(days=abs(n_days)), tdelta)
 
     def test_make_and_log_events(self):
         def count_defined_matches(evt):
@@ -124,8 +143,10 @@ class FlashscoreSiteTest(unittest.TestCase):
                     n_fail += 1
             return n_ok, n_fail
 
+        # goto_date(self.fsdrv, days_ago=1, start_date=datetime.date.today())
         events = make_events(
             webpage=self.page,
+            # skip_levels=skip_levels_work(),
             skip_levels=defaultdict(list),
             match_status=self.match_status,
         )
@@ -146,6 +167,13 @@ class FlashscoreSiteTest(unittest.TestCase):
             head="test_make_and_log_events {}".format(self.match_status),
             extended=True,
         )
+
+
+class SplitOntwoEnclosedTest(unittest.TestCase):
+    def test_split_ontwo_enclosed(self):
+        text = "ab(c)-d(ef)"
+        p1, p2 = split_ontwo_enclosed(text, delim_op="(", delim_cl=")")
+        self.assertTrue(p1 == "ab(c)-d" and p2 == "ef")
 
 
 if __name__ == "__main__":

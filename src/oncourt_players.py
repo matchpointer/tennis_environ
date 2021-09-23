@@ -1,12 +1,9 @@
-# -*- coding: utf-8 -*-
-
 """
     info about lefties taken from: http://tennisabstract.com/reports/leftyRankings.html
 """
 
 from collections import defaultdict
 import datetime
-import unittest
 from contextlib import closing
 import argparse
 
@@ -21,6 +18,10 @@ import tennis
 import file_utils as fu
 
 __players_from_sex = defaultdict(set)
+
+
+def dict_filename(sex):
+    return "{}/oncourt-{}.json".format(cfg_dir.oncourt_players_dir(), sex)
 
 
 def initialize(sex=None, yearsnum=2):
@@ -91,55 +92,6 @@ def read_players_from_db(sex, players_set, min_date, players_ext_dct):
             add_player(plr_right_id, plr_right_name, plr_right_country)
 
 
-class UnitTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        dba.open_connect()
-        initialize(yearsnum=8)
-
-    def test_min_players(self):
-        plrs = players("atp")
-        self.assertGreaterEqual(len(plrs), 1000)
-
-    def test_wta_count_hand_players(self):
-        plrs = players("wta")
-        cnt = sum([1 for p in plrs if p.lefty is not None])
-        print(f"wta n_hand={cnt}")
-        self.assertTrue(cnt >= 400)
-
-    # def test_wta_count_height_players(self):
-    #     plrs = players('wta')
-    #     cnt = sum([1 for p in plrs if p.height is not None])
-    #     print(f'wta n_height={cnt}')
-    #     self.assertTrue(cnt >= 400)
-
-    def test_atp_exist_lefty_player(self):
-        plrs = players("atp")
-        lefty_cnt = sum([1 for p in plrs if p.lefty])
-        self.assertTrue(lefty_cnt >= 5)
-        our_plrs = [p for p in plrs if p.name == "Gerald Melzer" and p.cou == "AUT"]
-        self.assertTrue(len(our_plrs) == 1)
-        if our_plrs:
-            self.assertTrue(our_plrs[0].lefty)
-
-    # def test_atp_exist_height_player(self):
-    #     plrs = players('atp')
-    #     cnt = sum([1 for p in plrs if p.height])
-    #     print(f'atp n_height={cnt}')
-    #     self.assertTrue(cnt >= 919)
-    #
-    # def test_atp_exist_weight_player(self):
-    #     plrs = players('atp')
-    #     cnt = sum([1 for p in plrs if p.weight])
-    #     print(f'n_atp_weight={cnt}')
-    #     self.assertTrue(cnt >= 943)
-    #
-    # def test_atp_exist_turned_pro_player(self):
-    #     plrs = players('atp')
-    #     cnt = sum([1 for p in plrs if p.turned_pro])
-    #     self.assertTrue(cnt >= 314)
-
-
 def actual_players_id(sex):
     if not actual_players_id.cache[sex]:
         actual_players_id.cache[sex] = _read_actual_players_id(sex)
@@ -185,10 +137,3 @@ if __name__ == "__main__":
         if args.sex in ("atp", None):
             write_actual_players(sex="atp")
             log.info("atp actual players done")
-    else:
-        log.initialize(co.logname(__file__, test=True), "debug", "debug")
-        unittest.main()
-
-
-def dict_filename(sex):
-    return "{}/oncourt-{}.json".format(cfg_dir.oncourt_players_dir(), sex)

@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 import datetime
 import copy
 import random
 import functools
-import unittest
 from contextlib import closing
 from typing import Optional
 
@@ -20,44 +18,7 @@ import stat_cont as st
 
 
 @functools.total_ordering
-class RoundGroup(object):
-    names = ("qual", "mdraw")
-
-    def __init__(self, value):
-        self.value = value.strip()
-        assert (
-            isinstance(self.value, str) and self.value in RoundGroup.names
-        ), "unexpected rg value: '{}'".format(self.value)
-
-    def __str__(self):
-        return str(self.value)
-
-    def __repr__(self):
-        return "{}('{}')".format(self.__class__.__name__, self.value)
-
-    def __hash__(self):
-        return hash(self.value)
-
-    def __eq__(self, other):
-        if isinstance(other, str):
-            return self.value == other
-        elif isinstance(other, RoundGroup):
-            return self.value == other.value
-        return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __lt__(self, other):
-        if isinstance(other, str):
-            idx_other = RoundGroup.names.index(other)
-        else:
-            idx_other = RoundGroup.names.index(other.value)
-        return RoundGroup.names.index(self.value) < idx_other
-
-
-@functools.total_ordering
-class Round(object):
+class Round:
     robin_names = [
         "Robin",
         "Rubber 1",
@@ -94,7 +55,7 @@ class Round(object):
         "N/A": 20,
     }
 
-    def __init__(self, value, details=None):
+    def __init__(self, value: str, details=None):
         self.value = co.to_ascii(value.strip())
         self._detailing = details
         assert self.value in Round.names, "unexpected rnd value: {}".format(self.value)
@@ -108,7 +69,10 @@ class Round(object):
         self._detailing = value
 
     def __str__(self):
-        return self.value if not self.detailing else self.value + ";" + self.detailing
+        if not self.detailing:
+            return self.value
+        else:
+            return f"{self.value};{self.detailing}"
 
     def __hash__(self):
         return hash(self.__str__())
@@ -117,7 +81,7 @@ class Round(object):
         return "{}('{}', {})".format(
             self.__class__.__name__,
             self.value,
-            "None" if not self.detailing else "'" + self.detailing + "'",
+            "None" if not self.detailing else f"'{self.detailing}'",
         )
 
     def __eq__(self, other):
@@ -147,9 +111,6 @@ class Round(object):
             )
         else:
             return idx_me < idx_other
-
-    def group(self):
-        return RoundGroup("qual") if self.qualification() else RoundGroup("mdraw")
 
     def main_draw(self):
         return self.value not in ("Pre-q", "q-First", "q-Second", "Qualifying")
@@ -238,21 +199,6 @@ class Round(object):
             self.detailing = "vs bye"
 
 
-class RoundTest(unittest.TestCase):
-    def test_cmp(self):
-        self.assertTrue(Round("Rubber 3") < "Rubber 5")
-        self.assertTrue(Round("Rubber 3") > "Rubber 2")
-        self.assertTrue("Rubber 3" < Round("Rubber 5"))
-        self.assertTrue("Rubber 3" > Round("Rubber 2"))
-
-        self.assertTrue("Rubber 3" == Round("Rubber 3"))
-        self.assertTrue(Round("Rubber 3") == "Rubber 3")
-
-        self.assertFalse(Round("Rubber 2").qualification())
-
-        self.assertTrue(Round("First", details="vs qual") == "First")
-
-
 def get_rnd_metric(rnd):
     return get_rnd_metric.rnd_to_metric[rnd]
 
@@ -287,18 +233,17 @@ def match_keys_combinations(level, surface, rnd):
         args.append({"surface": surface})
     if rnd:
         args.append({"rnd": rnd})
-        args.append({"rg": rnd.group()})
     return co.keys_combinations(args)
 
 
-class Match(object):
+class Match:
     def __init__(
         self, first_player=None, second_player=None, score=None, rnd=None, date=None
     ):
-        self.first_player = copy.copy(first_player)
-        self.second_player = copy.copy(second_player)
-        self.score = copy.copy(score)
-        self.rnd = copy.copy(rnd)
+        self.first_player = first_player
+        self.second_player = second_player
+        self.score = score
+        self.rnd = rnd
         self.date = date
         self.first_draw_status = (
             None  # after init try may be '' as mark of need not init
@@ -488,16 +433,14 @@ class Match(object):
         if self.first_player and self.second_player:
             cmp_r1 = self.first_player.rating.cmp_rank(value, rtg_name)
             cmp_r2 = self.second_player.rating.cmp_rank(value, rtg_name)
-            if cmp_r1 and cmp_r2:
-                return cmp_r1 == ratings.BELOW and cmp_r2 == ratings.BELOW
+            return cmp_r1.right_prefer and cmp_r2.right_prefer
 
     def is_ranks_both_above(self, value, rtg_name="std"):
         """True если у обоих рейтинг above (better) указанному"""
         if self.first_player and self.second_player:
             cmp_r1 = self.first_player.rating.cmp_rank(value, rtg_name)
             cmp_r2 = self.second_player.rating.cmp_rank(value, rtg_name)
-            if cmp_r1 and cmp_r2:
-                return cmp_r1 == ratings.ABOVE and cmp_r2 == ratings.ABOVE
+            return cmp_r1.left_prefer and cmp_r2.left_prefer
 
     def is_ranks_dif_wide(self, max_dif, rtg_name="std"):
         if self.first_player and self.second_player:
@@ -672,7 +615,7 @@ class Match(object):
                 return co.RIGHT
 
 
-class Player(object):
+class Player:
     def __init__(
         self,
         ident=None,
@@ -690,13 +633,11 @@ class Player(object):
         self.lefty: Optional[bool] = lefty
         self.disp_names = disp_names
 
-    def __str__(self):
-        rank = self.rating.rank("std")
-        return "{}{} ({}){}{}".format(
+    def __repr__(self):
+        return "{} {} ({}){}".format(
             self.name,
-            "" if self.birth_date is None else " " + str(self.age()) + "y",
+            self.birth_date,
             self.cou,
-            "" if rank is None else " " + str(rank),
             "" if not self.lefty else " lefty",
         )
 
@@ -715,7 +656,7 @@ class Player(object):
         return not self.__eq__(other)
 
     def unknown(self):
-        """unknown player used in oncourt as player versus bye player"""
+        """unknown player used in db as player versus bye player"""
         return self.ident == 3700
 
     def disp_name(self, key, default=None):
@@ -736,7 +677,7 @@ class Player(object):
         if date is None:
             rating_date = datetime.date.today()
             if rating_date.isoweekday() == 1:
-                # в понед-к (по крайней мере утром) oncourt еще не иммеет свежие рейтинги
+                # в понед-к (по крайней мере утром) db еще не иммеет свежие рейтинги
                 rating_date = rating_date - datetime.timedelta(days=7)
             else:
                 rating_date = tt.past_monday_date(rating_date)
@@ -770,7 +711,7 @@ class Player(object):
                 self.birth_date = birth.date() if birth is not None else None
 
 
-class Surface(object):
+class Surface:
     def __init__(self, name):
         name_low = co.to_ascii(name.strip()).lower()
         if ("carpet" in name_low and "outdoor" not in name_low) or (
@@ -808,13 +749,7 @@ class Surface(object):
         return not self.__eq__(other)
 
 
-class SurfaceTest(unittest.TestCase):
-    def test_cmp(self):
-        self.assertTrue("Clay" == Surface("Clay"))
-        self.assertTrue(Surface("Carpet") == "Carpet")
-
-
-class Level(object):
+class Level:
     names = ("main", "chal", "team", "teamworld", "junior", "future", "masters", "gs")
 
     def __init__(self, name):
@@ -907,7 +842,7 @@ def soft_level(level, rnd, qualification=None):
     return result
 
 
-class HeadToHead(object):
+class HeadToHead:
     """method flip need not here: if match.flip() will be called,
     then self.fst_player, self.snd_player will be swaped as references,
     hence direct() will return fliped value"""
@@ -1142,39 +1077,3 @@ class HeadToHead(object):
             now_date = datetime.date.today()
             if (now_date - match.date) <= datetime.timedelta(days=max_history_days):
                 return match.first_player.ident
-
-
-class HeadToHeadTest(unittest.TestCase):
-    def test_ito_kukushkin(self):
-        plr1 = Player(ident=8313, name="Tatsuma Ito", cou="JPN")
-        plr2 = Player(ident=9043, name="Mikhail Kukushkin", cou="KAZ")
-        match = Match(
-            first_player=plr1,
-            second_player=plr2,
-            score=sc.Score("4-6 7-6(3) 7-6(6)"),
-            rnd=Round("Second"),
-            date=datetime.date(2017, 2, 1),
-        )
-        h2hdir = HeadToHead(sex="atp", match=match, completed_only=True).direct()
-        self.assertEqual(h2hdir, None)
-
-    # def test_recent_winner(self):
-    #     """ actual only when date was 2019,10,18 and recent h2h match was 2019,9,26 """
-    #     plr1 = Player(ident=6590, name="Cagla Buyukakcay", cou="TUR")
-    #     plr2 = Player(ident=8951, name="Veronica Cepede Royg", cou="PAR")
-    #     match = Match(first_player=plr1, second_player=plr2,
-    #                   score=None, rnd=Round('Second'),
-    #                   date=datetime.date(2019, 10, 18))
-    #     h2h = HeadToHead(sex='wta', match=match, completed_only=True)
-    #     recent_winner_id = h2h.recently_won_player_id()
-    #     self.assertEqual(recent_winner_id, plr1.ident)
-
-
-if __name__ == "__main__":
-    import doctest
-
-    log.initialize(co.logname(__file__, test=True), "debug", None)
-    dba.open_connect()
-    doctest.testmod()
-    unittest.main()
-    dba.close_connect()

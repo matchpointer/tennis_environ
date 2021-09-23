@@ -3,7 +3,7 @@ import datetime
 import copy
 import time
 from collections import defaultdict
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 import re
 
 from lxml import etree
@@ -31,10 +31,21 @@ from geo import city_in_europe
 from tour_name import TourName
 
 SKIP_SEX = None
-SKIP_FINAL_RESULT_ONLY = True  # events marked as FRO are without point-by-point
+SKIP_FINAL_RESULT_ONLY = True  # events marked as FRO are without point by point
 
 
-def make_events_impl(cur_date, tree, match_status, skip_levels):
+def make_events(webpage, skip_levels, match_status=MatchStatus.live, target_date=None
+) -> List[LiveTourEvent]:
+    """Return events list. skip_levels is dict: sex -> levels"""
+    parser = lxml.html.HTMLParser(encoding="utf8")
+    tree = lxml.html.document_fromstring(webpage, parser)
+    if target_date is None:
+        target_date = datetime.date.today()  # also possible _make_current_date(tree)
+    result = _make_events_impl(target_date, tree, match_status, skip_levels)
+    return result
+
+
+def _make_events_impl(cur_date, tree, match_status, skip_levels) -> List[LiveTourEvent]:
     tour_events = []
     # div(tour_info), div(match), div(match)..., div(tour_info), div(match)...
     all_divs = list(
@@ -45,7 +56,7 @@ def make_events_impl(cur_date, tree, match_status, skip_levels):
     today_date = datetime.date.today()
     while is_events:
         try:
-            tennis_event = make_live_tour_event(
+            tennis_event = _make_live_tour_event(
                 all_divs[start_idx:], match_status, skip_levels, cur_date, start_idx
             )
             if tennis_event and not tennis_event.doubles:
@@ -116,18 +127,8 @@ def _split_team_event_by_countries(team_event):
     ]
 
 
-def make_events(webpage, skip_levels, match_status=MatchStatus.live, target_date=None):
-    """Return events list. skip_levels is dict: sex -> levels"""
-    parser = lxml.html.HTMLParser(encoding="utf8")
-    tree = lxml.html.document_fromstring(webpage, parser)
-    if target_date is None:
-        target_date = datetime.date.today()  # also possible make_current_date(tree)
-    result = make_events_impl(target_date, tree, match_status, skip_levels)
-    return result
-
-
-def make_live_tour_event(elements, match_status, skip_levels, current_date, start_idx):
-    tour_info = make_tourinfo(elements[0], start_idx)
+def _make_live_tour_event(elements, match_status, skip_levels, current_date, start_idx):
+    tour_info = _make_tourinfo(elements[0], start_idx)
     if (
         tour_info.doubles
         or tour_info.level in skip_levels[tour_info.sex]
@@ -141,7 +142,7 @@ def make_live_tour_event(elements, match_status, skip_levels, current_date, star
     for elem in elements[1:]:
         if "event__match" not in elem.get("class"):
             break  # next tour event
-        live_match = make_live_match(elem, live_event, current_date, match_status)
+        live_match = _make_live_match(elem, live_event, current_date, match_status)
         if live_match is None:
             continue
         if live_match.paired():
@@ -150,7 +151,7 @@ def make_live_tour_event(elements, match_status, skip_levels, current_date, star
     return live_event
 
 
-def make_live_match(element, live_event, current_date, match_status: MatchStatus):
+def _make_live_match(element, live_event, current_date, match_status: MatchStatus):
     def is_final_result_only():
         # score (not point by point) will be after match finish.
         # after finish we can not determinate that is was state FRO.
@@ -271,8 +272,8 @@ def make_live_match(element, live_event, current_date, match_status: MatchStatus
     left_name, left_cou = get_name_cou(is_left=True)
     right_name, right_cou = get_name_cou(is_left=False)
     obj.name = left_name + " - " + right_name
-    obj.first_player = find_player(live_event.sex, left_name, left_cou)
-    obj.second_player = find_player(live_event.sex, right_name, right_cou)
+    obj.first_player = _find_player(live_event.sex, left_name, left_cou)
+    obj.second_player = _find_player(live_event.sex, right_name, right_cou)
     if cur_st == MatchStatus.live:
         obj.left_service = is_left_service()
         obj.ingame = ingame_score()
@@ -305,7 +306,7 @@ def initialize_players_cache(webpage, match_status=MatchStatus.scheduled):
         init_cache_mode = False
 
 
-def find_player(sex, disp_name, cou):
+def _find_player(sex: str, disp_name: str, cou: str):
     cache = wta_today_players_cache if sex == "wta" else atp_today_players_cache
     if cache:
         return cache[(disp_name, cou)]
@@ -324,11 +325,11 @@ def find_player(sex, disp_name, cou):
         )
 
 
-def make_tourinfo(element, start_idx):
+def _make_tourinfo(element, start_idx):
     def split_before_after_text(text, part):
         if part in text:
             before_including = co.strip_after_find(text, part)
-            after_not_including = text[text.index(part) + len(part) :]
+            after_not_including = text[text.index(part) + len(part):]
             return before_including, after_not_including
 
     def split_sex_doubles_text(text):
@@ -555,7 +556,7 @@ class TourInfoFlashscore(TourInfo):
         return result
 
 
-def make_current_date(root_elem):
+def _make_current_date(root_elem):
     i_el = co.find_first_xpath(root_elem, "//div[@class='icon icon--calendar']")
     if i_el is not None:
         date_txt = i_el.tail
@@ -603,7 +604,7 @@ def goto_date(fsdrv, days_ago, start_date, wait_sec=5):
     fsdrv.implicitly_wait(wait_sec)
     parser = lxml.html.HTMLParser(encoding="utf8")
     tree = lxml.html.document_fromstring(fsdrv.page(), parser)
-    cur_date = make_current_date(tree)
+    cur_date = _make_current_date(tree)
     if cur_date != target_date:
         raise co.TennisError(
             "target_date {} != cur_date {} days_ago: {}".format(

@@ -1,7 +1,4 @@
-# -*- coding: utf-8 -*-
 import datetime
-import unittest
-from collections import namedtuple
 
 import log
 import common as co
@@ -574,55 +571,6 @@ def find_tail_tour_by_attr(sex, tour_name, level, surface):
             return t1 if t1.date > t2.date else t2
 
 
-class WeekedToursTest(unittest.TestCase):
-    def test_tail_tours_write(self):
-        weeked_tours.dump_tail_tours(sex="wta", tail_weeks=2)
-        weeked_tours.dump_tail_tours(sex="atp", tail_weeks=2)
-        self.assertTrue(1)
-
-    def test_tours_write(self):
-        from tournament import tours_write_file
-
-        wta_tours = weeked_tours.all_tours(sex="wta")
-        atp_tours = weeked_tours.all_tours(sex="atp")
-        tours_write_file(wta_tours, filename="./get_features_test_wta_tours.txt")
-        tours_write_file(atp_tours, filename="./get_features_test_atp_tours.txt")
-        self.assertTrue(1)
-
-    def test_prevyear_tour_rnd_for_2020_begin_adhoc_only(self):
-        from live import back_year_weeknums
-
-        today_date = datetime.date.today()
-        if (today_date.year, today_date.month) == (2020, 1) and today_date.day <= 15:
-            FakedTour = namedtuple("FakedTour", "name level surface")
-            FakedPlayer = namedtuple("FakedPlayer", "ident name")
-            FakedMatch = namedtuple("FakedMatch", "first_player second_player")
-            vekic = FakedPlayer(ident=13498, name="Donna Vekic")
-            putintseva = FakedPlayer(ident=12390, name="Yulia Putintseva")
-            match = FakedMatch(first_player=vekic, second_player=putintseva)
-            tour = FakedTour(name="Brisbane", level="main", surface="Hard")
-            features = []
-            add_prevyear_tour_features(
-                features, "wta", back_year_weeknums(max_weeknum_dist=56), tour, match
-            )
-            self.assertTrue(features)
-            if features:
-                f1 = feature.player_feature(
-                    features, "prevyear_tour_rnd", is_first=True
-                )
-                f2 = feature.player_feature(
-                    features, "prevyear_tour_rnd", is_first=False
-                )
-                self.assertTrue(
-                    abs(f1.value - 4.2) < 0.001
-                )  # vekic in 1/2 prevyear brisbane
-                self.assertTrue(
-                    abs(f2.value - 0.9) < 0.001
-                )  # putintseva in First prevyear brisbane
-        else:
-            self.assertTrue(True)
-
-
 def add_tour_adapt_features(features, trg_tour, trg_match, min_value=-60):
     f1, f2 = tour_adapt_features(trg_tour, trg_match, min_value)
     features.append(f1)
@@ -716,51 +664,3 @@ def tour_adapt_features(trg_tour, trg_match, min_value=-60):
         fst_value=fst_plr_val,
         snd_value=snd_plr_val,
     )
-
-
-if __name__ == "__main__":
-    import dba
-    import ratings_std
-    import oncourt_players
-    import bet_coefs
-
-    log.initialize(
-        co.logname(__file__, test=True), file_level="debug", console_level="debug"
-    )
-    dba.open_connect()
-    date = tt.past_monday_date(datetime.date.today())
-    ratings_std.initialize(min_date=datetime.date.today() - datetime.timedelta(days=21))
-    oncourt_players.initialize(yearsnum=1.2)
-    matchstat.initialize(
-        min_date=date - datetime.timedelta(days=7 * matchstat.HIST_WEEKS_NUM),
-        time_reverse=True,
-        tour_surface=True,
-    )
-
-    bet_coefs.initialize(sex="wta", min_date=date - datetime.timedelta(days=7))
-    bet_coefs.initialize(sex="atp", min_date=date - datetime.timedelta(days=7))
-    # for fatigue, live-matches details(rnd-details, tour.level, tour.surface):
-    weeked_tours.initialize_sex(
-        "wta",
-        min_date=date - datetime.timedelta(days=7 * 55),
-        max_date=date + datetime.timedelta(days=11),
-        with_today=True,
-        with_paired=True,
-        with_ratings=True,
-        with_bets=True,
-        with_stat=True,
-        rnd_detailing=True,
-    )
-    weeked_tours.initialize_sex(
-        "atp",
-        min_date=date - datetime.timedelta(days=7 * 55),
-        max_date=date + datetime.timedelta(days=11),
-        with_today=True,
-        with_paired=True,
-        with_ratings=True,
-        with_bets=True,
-        with_stat=True,
-        rnd_detailing=True,
-    )
-    unittest.main()
-    dba.close_connect()

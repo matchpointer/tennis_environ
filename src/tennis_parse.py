@@ -7,7 +7,7 @@ import common as co
 import log
 import tennis
 import oncourt_players
-import wards
+import words
 
 
 def identify_player(company_name, sex, player_short_name, cou=None):
@@ -108,7 +108,7 @@ class AbbrName(object):
             for plr_lexem in player_lexems:
                 if (
                     last_part_low not in AbbrName.last_prefixes
-                    and wards.resemble_words_err2(last_part_low, plr_lexem)
+                    and words.resemble_words_err2(last_part_low, plr_lexem)
                 ):
                     ok_length += len(last_part_low)
         return ok_length >= 4 or (
@@ -303,13 +303,13 @@ class AbbrNameTest(unittest.TestCase):
             self.assertEqual(plr.name, "Xin Yu Wang")
 
     def test_wta_find(self):
-        # self.assertEqual(AbbrName('Ferrer-Suarez I.').find_player(self.players_wta).name,
+        # self.assertEqual(AbbrName('Ferrer-Suarez I.')._find_player(self.players_wta).name,
         #                  'Ines Ferrer-Suarez')
         self.assertEqual(
             AbbrName("Van Uytvanck A.").find_player(self.players_wta).name,
             "Alison Van Uytvanck",
         )
-        # self.assertEqual(AbbrName('Date Krumm K.').find_player(self.players_wta).name,
+        # self.assertEqual(AbbrName('Date Krumm K.')._find_player(self.players_wta).name,
         #                  'Kimiko Date-Krumm')
         self.assertEqual(
             AbbrName("McHale C.").find_player(self.players_wta).name, "Christina Mchale"
@@ -323,10 +323,10 @@ class AbbrNameTest(unittest.TestCase):
             AbbrName("Begu I. -C.").find_player(self.players_wta).name,
             "Irina-Camelia Begu",
         )
-        # self.assertEqual(AbbrName('Martinez Sanchez M.-J.').find_player(
+        # self.assertEqual(AbbrName('Martinez Sanchez M.-J.')._find_player(
         #     self.players_wta).name, 'Maria-Jose Martinez Sanchez')
-        # self.assertEqual(AbbrName('Li Na').find_player(self.players_wta).name, 'Na Li')
-        # self.assertEqual(AbbrName('Zheng Jie').find_player(self.players_wta).name,
+        # self.assertEqual(AbbrName('Li Na')._find_player(self.players_wta).name, 'Na Li')
+        # self.assertEqual(AbbrName('Zheng Jie')._find_player(self.players_wta).name,
         #                  'Jie Zheng')
         self.assertEqual(
             AbbrName("Pliskova Ka.").find_player(self.players_wta).name,
@@ -335,7 +335,7 @@ class AbbrNameTest(unittest.TestCase):
 
     def test_atp_find(self):
         # ---- another ambigious china problem: also exist 'Ze Zhang'
-        # self.assertEqual(AbbrName('Zhang Z.').find_player(self.players_atp).name,
+        # self.assertEqual(AbbrName('Zhang Z.')._find_player(self.players_atp).name,
         #                  'Zhizhen Zhang')
         self.assertEqual(
             AbbrName("Brinkman N.").find_player(self.players_atp).name, "Nils Brinkman"

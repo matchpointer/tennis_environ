@@ -260,7 +260,7 @@ class StructKey(Struct):
                 name, value = item.split("=")
                 dct[name] = value
             return StructKey(**dct)
-        raise TennisError("StructKey failed create_from_text: empty arg")
+        raise TennisError("StructKey failed init-from_text: empty arg")
 
     def keys_string(self, sep=None):
         if sep is None:
@@ -331,10 +331,6 @@ class Keys(dict):
             return Keys(level=soft_level, surface=str(surface))
         else:
             return Keys(level=soft_level)
-
-    def add_round_group(self):
-        if "rg" not in self and "rnd" in self:
-            self["rg"] = self["rnd"].group()
 
     def combinations(self):
         if self.__combinations is not None:
@@ -791,6 +787,14 @@ DEUCE, ADV = ("DEUCE", "ADV")
 def side(left):
     if left is not None:
         return Side(left)
+
+
+class PredictResult(IntEnum):
+    undefined = -3
+    retired = -2
+    empty = -1
+    lose = 0
+    win = 1
 
 
 @functools.total_ordering

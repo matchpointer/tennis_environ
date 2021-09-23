@@ -5,12 +5,11 @@ r"""
 import copy
 import datetime
 from collections import defaultdict, namedtuple
-
+from typing import Optional
 from enum import IntEnum
 
 import common as co
 import config_file as cf
-import dba
 import decided_set
 import feature
 import get_features
@@ -19,7 +18,6 @@ import last_results
 import log
 from bet import WinCoefs
 import matchstat
-import oncourt_players
 import pre_live_dir
 import ratings
 import report_line as rl
@@ -38,6 +36,7 @@ import tie_stat
 from clf_common import FeatureError
 import after_tie_perf_stat
 import atfirst_after
+import impgames_stat
 
 
 class LiveEventToskipError(co.TennisError):
@@ -77,8 +76,8 @@ def skip_levels_default():
 
 def skip_levels_work():
     return {
-        "wta": ("junior", "future", "team"),
-        "atp": ("junior", "future", "team"),
+        "wta": ("junior", "future", "team", "qual", "chal"),
+        "atp": ("junior", "future", "team", "qual", "chal"),
     }
 
 
@@ -196,7 +195,7 @@ class TourInfo(object):
         return result
 
     @property
-    def decided_tiebreak(self):
+    def decided_tiebreak(self) -> Optional[bool]:
         return sc.decided_tiebreak(
             self.sex, datetime.date.today().year, self.tour_name, self.qualification
         )
@@ -343,12 +342,12 @@ class LiveMatch(tennis.Match):
         if self.href:
             return f"{self.href}/#match-summary/point-by-point/{setnum - 1}"
 
-    def summary_href(self):
+    def summary_href(self) -> str:
         if self.href:
             return "{}/#match-summary/match-summary".format(self.href)
 
     @property
-    def datetime(self):
+    def datetime(self) -> Optional[datetime.datetime]:
         if self.date is None:
             return None
         if self.time is None:
@@ -365,7 +364,7 @@ class LiveMatch(tennis.Match):
         )
 
     @property
-    def sex(self):
+    def sex(self) -> Optional[str]:
         if self.live_event is not None:
             return self.live_event.sex
 
@@ -375,7 +374,7 @@ class LiveMatch(tennis.Match):
             return self.live_event.level
 
     @property
-    def soft_level(self):
+    def soft_level(self) -> str:
         return tennis.soft_level(self.level, self.rnd, self.qualification)
 
     @property
@@ -389,7 +388,7 @@ class LiveMatch(tennis.Match):
             return self.live_event.tour_name
 
     @property
-    def best_of_five(self):
+    def best_of_five(self) -> Optional[bool]:
         if self.rnd is not None:
             return trmt.best_of_five(
                 self.date, self.sex, self.tour_name, self.level, self.rnd
@@ -398,7 +397,7 @@ class LiveMatch(tennis.Match):
             return self.live_event.best_of_five
 
     @property
-    def qualification(self):
+    def qualification(self) -> Optional[bool]:
         if self.rnd is not None:
             return self.rnd.qualification()
         if self.live_event is not None and self.live_event.qualification is not None:
@@ -686,6 +685,32 @@ class LiveMatch(tennis.Match):
                     self.first_player.ident,
                     self.second_player.ident,
                 )
+
+                impgames_stat.add_read_features(
+                    self.features,
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    aspect_name="setend",
+                    set_name="decided",
+                )
+                impgames_stat.add_read_features(
+                    self.features,
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    aspect_name="onstaymatch",
+                    set_name="decided",
+                )
+                impgames_stat.add_read_features(
+                    self.features,
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    aspect_name="onmatch",
+                    set_name="decided",
+                )
+
                 tie_stat.add_read_sv_features_pair(
                     self.features,
                     "s1_tie_ratio",
@@ -765,9 +790,9 @@ class LiveMatch(tennis.Match):
                     sval = rl.SizedValue(*sval_args)
                     self.features.append(feature.RigidFeature(name=name, value=sval))
 
-        def plr_sv_feature(name, prefix=""):
-            fst_name = prefix + "fst_" + name
-            snd_name = prefix + "snd_" + name
+        def plr_sv_feature(name):
+            fst_name = f"fst_{name}"
+            snd_name = f"snd_{name}"
             if fst_name in dct and snd_name in dct:
                 fst_val = rl.SizedValue(*dct[fst_name])
                 snd_val = rl.SizedValue(*dct[snd_name])
@@ -778,9 +803,9 @@ class LiveMatch(tennis.Match):
                     feature.Feature(name=snd_name, value=snd_val, flip_value=fst_val)
                 )
 
-        def plr_feature(name, prefix=""):
-            fst_name = prefix + "fst_" + name
-            snd_name = prefix + "snd_" + name
+        def plr_feature(name):
+            fst_name = f"fst_{name}"
+            snd_name = f"snd_{name}"
             if fst_name in dct and snd_name in dct:
                 fst_val = dct[fst_name]
                 snd_val = dct[snd_name]
@@ -791,7 +816,7 @@ class LiveMatch(tennis.Match):
                     feature.Feature(name=snd_name, value=snd_val, flip_value=fst_val)
                 )
 
-        def player_load(dct, prefix, player):
+        def player_load(prefix: str, player: tennis.Player):
             player.ident = dct.get(prefix + "_player_id")
             player.name = dct.get(prefix + "_player_name")
             player.rating = ratings.Rating(dct.get(prefix + "_player_rating"))
@@ -814,8 +839,8 @@ class LiveMatch(tennis.Match):
             self.first_player = tennis.Player()
         if self.second_player is None:
             self.second_player = tennis.Player()
-        player_load(dct, "fst", self.first_player)
-        player_load(dct, "snd", self.second_player)
+        player_load("fst", self.first_player)
+        player_load("snd", self.second_player)
         if "rnd" in dct:
             rnd_txt = dct["rnd"]
             if rnd_txt:
@@ -849,6 +874,9 @@ class LiveMatch(tennis.Match):
         plr_sv_feature("sd_tie_ratio")
         plr_sv_feature("s2_tie_ratio_press")
         plr_sv_feature("s2_tie_ratio_under")
+        plr_sv_feature("decided_setend_srv")
+        plr_sv_feature("decided_onstaymatch_srv")
+        plr_sv_feature("decided_onmatch_srv")
 
         if "fst_win_coef" in dct and "snd_win_coef" in dct:
             fst_wcoef, snd_wcoef = dct["fst_win_coef"], dct["snd_win_coef"]
@@ -1044,6 +1072,14 @@ class LiveMatch(tennis.Match):
                     self.second_draw_status = match.first_draw_status
             self.fill_details_tried = True
 
+    def get_ranks_cmp(self, rtg_name: str, is_surface: bool) -> ratings.CompareResult:
+        if self.first_player and self.second_player:
+            r1 = self.first_player.rating.rank(
+                rtg_name, surface=str(self.surface) if is_surface else "all")
+            r2 = self.second_player.rating.rank(
+                rtg_name, surface=str(self.surface) if is_surface else "all")
+            return ratings.compare_result(r1, r2, inranks=True)
+
     def elo_pts_dif_mixed(self, gen_part: float = 0.55, isalt: bool = True):
         elo_name = "elo_alt" if isalt else "elo"
         fst_pts = self.first_player.rating.pts(elo_name)
@@ -1093,7 +1129,7 @@ class LiveTourEvent(object):
         return self.tour_info is not None and self.tour_info.doubles
 
     @property
-    def decided_tiebreak(self):
+    def decided_tiebreak(self) -> Optional[bool]:
         if self.tour_info is not None:
             return self.tour_info.decided_tiebreak
 
@@ -1101,20 +1137,17 @@ class LiveTourEvent(object):
         return self.is_special
 
     def live_betable(self):
-        if self.doubles or self.level in (
-            "future",
-            "junior",
-        ):  # for chal
+        if self.doubles or self.level in ("future", "junior"):
             return False
         if self.qualification and (
-            (self.sex is "atp" and self.level not in ("gs", "masters"))
-            or (self.sex is "wta" and self.level not in ("gs", "masters", "main"))
+            (self.sex == "atp" and self.level not in ("gs", "masters"))
+            or (self.sex == "wta" and self.level not in ("gs", "masters", "main"))
         ):
             return False
         return True
 
     def ident_by_players(self, tours, fst_id, snd_id):
-        def ident_in_tour(tour):
+        def ident_in_tour():
             for matches in tour.matches_from_rnd.values():
                 for m in matches:
                     if m.score is None and (
@@ -1134,11 +1167,11 @@ class LiveTourEvent(object):
             return False
 
         for tour in co.find_all(tours, lambda t: t.name == self.tour_name):
-            if ident_in_tour(tour):
+            if ident_in_tour():
                 return True
         # try find tour without tour_name equal (maybe Davis/Fed Cup?)
         for tour in tours:
-            if ident_in_tour(tour):
+            if ident_in_tour():
                 return True
         return False
 
@@ -1192,7 +1225,7 @@ class LiveTourEvent(object):
         if self.tour_info is not None and (
             self.tour_info.level is None or self.tour_id is None
         ):
-            tours = weeked_tours.tail_tours(self.sex, tail_weeks=2)
+            tours = weeked_tours.tail_tours(self.sex)
             for m in self.matches:
                 if m.players_defined():
                     if self.ident_by_players(
@@ -1205,7 +1238,7 @@ class LiveTourEvent(object):
     def fill_matches_details(self):
         if self.tour_info is not None and self.tour_id is not None:
             tour = co.find_first(
-                weeked_tours.tail_tours(self.sex, 2), lambda t: t.ident == self.tour_id
+                weeked_tours.tail_tours(self.sex), lambda t: t.ident == self.tour_id
             )
             if tour is None:
                 log.error(
@@ -1297,32 +1330,3 @@ class GetEventsFromFiles(object):
     def __iter__(self):
         return iter([self.events_from_file(fn) for fn in self.filenames])
 
-
-if __name__ == "__main__":
-    log.initialize(
-        co.logname(__file__, test=True), file_level="info", console_level="info"
-    )
-    dba.open_connect()
-    ratings.initialize(
-        sex=None,
-        rtg_names=("std", "elo"),
-        min_date=datetime.date.today() - datetime.timedelta(days=21),
-    )
-    # ratings.Rating.register_rtg_name('elo')
-    oncourt_players.initialize(yearsnum=1.2)
-
-    features = []
-    inset_keep_recovery.add_read_features(
-        features,
-        sex="wta",
-        setnames=("open",),
-        fst_id=13351,
-        snd_id=902,
-        feat_suffix="_7y",
-    )
-    if len(features) > 1:
-        for f in features:
-            print(f.name, f.value)
-
-    # unittest.main()
-    dba.close_connect()

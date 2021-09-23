@@ -1369,7 +1369,7 @@ def score_tail_gap_iter(start_score, end_score, left_semiopen=False):
 
 def decided_tiebreak(
     sex, year, tour_name, qualification, level=None, best_of_five=None
-):
+) -> Optional[bool]:
     def ao_wildcard_tiebreak():
         if (sex == "wta" and year >= 2017) or (sex == "atp" and year >= 2018):
             return True
@@ -1475,8 +1475,8 @@ def get_decided_tiebreak_info(
         if sex == "wta" and qualification:
             if (
                 level == "future"
-                or (level == "chal" and money is not None and money < 125000)
-                # (level == 'chal' and  # except which are 125K money:
+                or (level == "chal" and money is not None and money < 115000)
+                # (level == 'chal' and  # except which are 115K money:
                 #  'Newport Beach' not in tour_name and
                 #  'Indian Wells' not in tour_name and
                 #  'Anning' not in tour_name and
@@ -1537,6 +1537,8 @@ def get_decided_tiebreak_info_ext(
 
     res_score = score
     if res_dectieinfo.beg_scr == (0, 0):
+        if not score.retired and max(dec_set) < 10:
+            return score, default_tie_info  # dec super tie impossible
         scr_txt = str(score)
         try:
             res_score = Score(scr_txt, decsupertie=True)

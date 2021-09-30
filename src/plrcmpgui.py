@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 import os
 from collections import defaultdict
@@ -922,7 +921,7 @@ def main():
         dba.close_connect()
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exception=True)
+        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
         return 1
 
 

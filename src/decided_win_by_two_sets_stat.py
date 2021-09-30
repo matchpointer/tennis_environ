@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 import sys
 import unittest
@@ -327,7 +326,7 @@ def do_stat():
         log.info(__file__ + " finished sex: {}".format(args.sex))
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exception=True)
+        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
         return 1
 
 

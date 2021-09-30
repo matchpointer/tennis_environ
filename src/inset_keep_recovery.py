@@ -1,6 +1,4 @@
-# -*- coding: utf-8 -*-
-
-""" cases: 
+""" cases:
     A) player down 1 break after 2 games (0:2);
     B) first 2 games gives 1-1. player down 1 break (1:3) after 4 games;
     C) first 2 games gives 1-1. player down  (0:3) after 3 games;
@@ -575,7 +573,7 @@ def do_stat():
         log.info(__file__ + " finished sex: {}".format(args.sex))
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exception=True)
+        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
         return 1
 
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from collections import defaultdict, namedtuple
 from operator import itemgetter
 import operator
@@ -1261,7 +1260,7 @@ class QuadServiceStat(object):
                 f"QuadError: {err} {err.__class__.__name__}\n"
                 f"prsc {prev_score} pri {prev_ingame} prsrv {prev_left_service}"
                 f"\nsc {score} in {ingame} srv {left_service}",
-                exception=True,
+                exc_info=True,
             )
 
     @staticmethod

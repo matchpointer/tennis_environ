@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 r"""
 в модуле логика обработки матчей которые вскоре станут live
 """
@@ -344,7 +343,7 @@ def main(scripts):
             script.timer.restart()
             first_exec = False
         except co.TennisError as err:
-            log.error(str(err), exception=True)
+            log.error(str(err), exc_info=True)
             break
     drv.stop()
     drv = None

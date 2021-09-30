@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 r"""
 в модуле общая логика обработки live обьектов.
 """
@@ -341,7 +340,7 @@ class Application(tkinter.Frame):
                     # may be inet problems
                     log.error(
                         "drv.page_source {}\nfail try_num: {}".format(err, try_num),
-                        exception=True,
+                        exc_info=True,
                     )
                     time.sleep(20)
                     try:
@@ -349,7 +348,7 @@ class Application(tkinter.Frame):
                     except TimeoutException as err2:
                         log.error(
                             "drv.get {}\nfail try_num: {}".format(err2, try_num),
-                            exception=True,
+                            exc_info=True,
                         )
                         time.sleep(20)
 

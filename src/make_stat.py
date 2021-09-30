@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 import sys
 from collections import defaultdict
@@ -1282,7 +1281,7 @@ def do_stat():
         )
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exception=True)
+        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
         return 1
 
 

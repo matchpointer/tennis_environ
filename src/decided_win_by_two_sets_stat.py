@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 import unittest
@@ -296,7 +297,7 @@ def read_scores_dict(sex, level):
     if not os.path.isfile(filename):
         log.error("FILE {} NOT EXIST".format(filename))
         return None
-    dct = dict_tools.load(filename, valuefun=st.WinLoss.create_from_text)
+    dct = dict_tools.load(filename, valuefun=st.WinLoss.from_text)
     if dct:
         read_scores_dict.cache[(sex, level)] = dct
         return dct

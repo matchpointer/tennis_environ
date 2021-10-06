@@ -1,12 +1,7 @@
-# -*- coding: utf-8 -*-
 import os
-import unittest
-import json
 
-import log
 import cfg_dir
 import file_utils as fu
-import common as co
 
 
 dirname = cfg_dir.pre_live_dir("matches")
@@ -51,29 +46,3 @@ def _filename(pre_live_name):
     return os.path.join(dirname, pre_live_name)
 
 
-class JsonfileTest(unittest.TestCase):
-    dirname = cfg_dir.unit_test_data_dir()
-
-    def test_json_read(self):
-        filename = os.path.join(self.dirname, "json_dict.txt")
-        with open(filename, "r") as fh:
-            dct = json.load(fh)
-        self.assertTrue(8.5399 <= dct["fst_win_coef"] <= 8.54)
-        self.assertTrue(1.085 <= dct["snd_win_coef"] <= 1.086)
-        self.assertTrue("snd_player_name" in dct)
-        self.assertTrue(isinstance(dct["snd_player_name"], str))
-
-
-class FilesTest(unittest.TestCase):
-    def test_remove_all(self):
-        print("dirname: ", dirname)
-        self.assertTrue(os.path.isdir(dirname))
-        remove_all()
-        self.assertTrue(len("OK") > 0)
-
-
-if __name__ == "__main__":
-    log.initialize(
-        co.logname(__file__, test=True), file_level="info", console_level="info"
-    )
-    unittest.main()

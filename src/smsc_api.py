@@ -13,7 +13,7 @@ except ImportError:
 
 import config_personal
 
-config_personal.initialize_from_file('personal.cfg', sign='matchpointer')
+config_personal.initialize_from_file('../personal.cfg', sign='matchpointer')
 
 # Константы для настройки библиотеки
 SMSC_LOGIN = config_personal.getval('sms', 'SMSC_LOGIN')

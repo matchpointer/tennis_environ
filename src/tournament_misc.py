@@ -7,7 +7,7 @@ import unittest
 
 import log
 import common as co
-import tennis_parse
+import player_name_ident
 import flashscore_match
 
 
@@ -276,11 +276,11 @@ def _ident_players(tour_events):
     for tour_evt in tour_events:
         for match in tour_evt.matches:
             if match.first_player is None or match.first_player.ident is None:
-                match.first_player = tennis_parse.identify_player(
+                match.first_player = player_name_ident.identify_player(
                     "FS", tour_evt.sex, get_abbr_name_side(match.name, co.LEFT)
                 )
             if match.second_player is None or match.second_player.ident is None:
-                match.second_player = tennis_parse.identify_player(
+                match.second_player = player_name_ident.identify_player(
                     "FS", tour_evt.sex, get_abbr_name_side(match.name, co.RIGHT)
                 )
 

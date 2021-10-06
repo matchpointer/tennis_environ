@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 r"""
-в модуле логика обработки Alert subclasses.
+module gives Alert with subclasses.
 """
 from collections import namedtuple
 from typing import Optional
@@ -36,7 +35,8 @@ def remain_ge_chal_skip_cond(match):
 AlertMessage = namedtuple(
     "AlertMessage",
     "hashid text fst_id snd_id fst_name snd_name back_side "
-    "case_name sex summary_href fst_betfair_name snd_betfair_name prob book_prob",
+    "case_name sex summary_href fst_betfair_name snd_betfair_name "
+    "prob book_prob comment",
 )
 
 
@@ -75,13 +75,12 @@ class Alert(object):
         )
         back_text = f"[{'1' if back_side.is_left() else '2'}]"
         prob_text = f"P={round(prob, 3) if prob is not None else '_'}"
-        comment_text = "" if not comment else f"/{comment}/"
         book_prob = (match.first_player_bet_chance() if back_side.is_left()
                      else 1. - match.first_player_bet_chance())
         return AlertMessage(
             hashid=match.hashid(add_text=self_text),
             text=(
-                f"{match.tostring()} {back_text} {prob_text} {comment_text} {self_text}"
+                f"{match.tostring()} {back_text} {prob_text} {comment} {self_text}"
             ),
             fst_id=match.first_player.ident,
             snd_id=match.second_player.ident,
@@ -94,7 +93,8 @@ class Alert(object):
             fst_betfair_name=match.first_player.disp_name("betfair", ""),
             snd_betfair_name=match.second_player.disp_name("betfair", ""),
             prob=prob,
-            book_prob=book_prob
+            book_prob=book_prob,
+            comment=comment,
         )
 
 
@@ -222,8 +222,13 @@ class AlertSetDecidedWinClf(AlertSetDecided):
     классификатора
     """
 
-    def __init__(self, back_opener: Optional[bool]):
+    def __init__(
+        self,
+        back_opener: Optional[bool],
+        strict_min_probas: Optional[cco.PosNeg],
+    ):
         super().__init__(back_opener=back_opener)
+        self.strict_min_probas = strict_min_probas
         self.dec_begin_adv_dif = 0.1
         self.dec_begin_min_size = 10
 
@@ -294,19 +299,41 @@ class AlertSetDecidedWinClf(AlertSetDecided):
             if var1 is not None and var2 is not None:
                 return var1 == var2
 
-        def checked_return(back_side: Side, prob, comment: str, rejected: bool):
-            if not rejected and allow_back(match, back_side, self, prob):
-                if comment:
-                    log.info(
-                        f"{self.__class__.__name__} WITH {comment} {match.name}"
-                        f" back {back_side}"
+        def strict_fired():
+            if self.strict_min_probas:
+                variant = cco.Variant.find_match_variant(
+                    match, clf_decided_00.work_variants)
+                if variant is not None:
+                    return (
+                        (clf_back_side == set_opener_side
+                         and self.strict_min_probas.neg >= variant.min_probas.neg)
+                        or
+                        (clf_back_side != set_opener_side
+                         and self.strict_min_probas.pos >= variant.min_probas.pos)
                     )
-                return back_side, prob, comment
-            log.info(
-                f"{self.__class__.__name__} reject {match.name}"
-                f" back_side {back_side} {comment}"
+
+        def checked_return(back_side: Side, prob, comment: str, rejected: bool):
+            is_fired = (
+                not self.strict_min_probas
+                or strict_fired()
+                or (match.sex == 'wta' and '+' in comments)
             )
-            predicts_db.write_rejected(match, 'decided_00', back_side, reason=comment)
+            allow_res = None
+            if is_fired:
+                if not rejected:
+                    allow_res = allow_back(match, back_side, self, prob)
+                    if allow_res:
+                        return back_side, prob, comment
+                    rejected = True
+            if rejected:
+                if allow_res is not None and allow_res.comment:
+                    comment += ' ' + allow_res.comment
+                log.info(
+                    f"{self.__class__.__name__} rejected {match.name}"
+                    f" back_side {back_side} {comment}"
+                )
+                predicts_db.write_rejected(
+                    match, 'decided_00', back_side, reason=comment)
             return False
 
         if clf_back_side is None:
@@ -479,10 +506,8 @@ class AlertSetAfterTieAffect(AlertSetAfterTie):
             if (
                 sv
                 and sv.size > 20
-                and (sv.value + 0.03)
-                < set2_after_set1loss_stat.read_generic_value(
-                    match.sex, "set2win_after_set1win"
-                )
+                and (sv.value + 0.03) < set2_after_set1loss_stat.read_generic_value(
+                    match.sex, "set2win_after_set1win")
             ):
                 log.info(
                     "{} reject {} by set2win_after_set1win {}".format(
@@ -530,15 +555,19 @@ class AlertSet2WinClf(AlertSet):
                 )
                 if backing_side is None:
                     return False
-                if (not allow_back(match, backing_side, self, prob)
-                    or tieloss_affect_side(
+                allow_res = allow_back(match, backing_side, self, prob)
+                is_tieaff = tieloss_affect_side(
                         match, setnum=2, check_side=backing_side) == backing_side
-                ):
+                if not allow_res or is_tieaff:
+                    comment = allow_res.comment
+                    if is_tieaff:
+                        comment += ' ' + 'tieaff'
                     log.info(
-                        f"{self.__class__.__name__} reject {match.name}"
-                        f" back: {backing_side}"
+                        f"{self.__class__.__name__} rejected {match.name}"
+                        f" back: {backing_side} {comment}"
                     )
-                    predicts_db.write_rejected(match, self.case_name(), backing_side)
+                    predicts_db.write_rejected(
+                        match, self.case_name(), backing_side, reason=comment)
                     return False
                 return backing_side, prob
         return True
@@ -951,432 +980,6 @@ class AlertScEqualTieRatio(AlertScEqual):
         return None  # disable
 
 
-class AlertScPursue(AlertSc):
-    """Зеркальная логика реализуется зеркально сконструируемым объектом.
-    Т.е. например left_srv_side(3, 4) и (4, 3)right_srv_side - в разных об-тах
-    """
-
-    def __init__(
-        self,
-        setname,
-        insetscore,
-        back_srv=False,
-        srv_leader=False,
-        skip_cond=remain_soft_main_skip_cond,
-    ):
-        if insetscore[0] < insetscore[1]:
-            srv_side = co.RIGHT if srv_leader else co.LEFT
-        else:
-            srv_side = co.LEFT if srv_leader else co.RIGHT
-        super().__init__(
-            setname=setname, insetscore=insetscore, srv_side=srv_side, back_srv=back_srv
-        )
-        self.skip_cond = skip_cond
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""
-        trg_srv_side = AlertSc._condition_common(self, match)
-        if trg_srv_side in (co.LEFT, co.RIGHT) and trg_srv_side != self.srv_side:
-            return False
-        if self.skip_cond(match):
-            return False
-        return trg_srv_side
-
-    def _condition_now(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze current match state.
-        Return back side (if fired), False (if gone), True (if attention)"""
-        if match.score[-1] == self.insetscore and match.ingame in (
-            None,
-            ("0", "0"),
-            ("15", "0"),
-            ("0", "15"),
-            ("15", "15"),
-        ):
-            return self.back_side(trg_srv_side)
-
-    def _condition_next(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze for next game from current match state.
-        Return back side (if fired), False (if gone), True (if attention)"""
-
-        def get_cur_insetscore(break_route):
-            if break_route:
-                if trg_srv_side.is_left():
-                    return self.insetscore[0] - 1, self.insetscore[1]
-                else:
-                    return self.insetscore[0], self.insetscore[1] - 1
-            else:
-                if trg_srv_side.is_left():
-                    return self.insetscore[0], self.insetscore[1] - 1
-                else:
-                    return self.insetscore[0] - 1, self.insetscore[1]
-
-        cur_srv_side = trg_srv_side.fliped()  # inverse serve in prev game
-        ingame_adv_side = ingame_advance_side(match.ingame)
-        ingame_normal_sides = ingame_normalgo_sides(match.ingame)
-        for break_route in (False, True):
-            cur_insetscore = get_cur_insetscore(break_route)
-            if cur_insetscore == match.score[-1]:
-                if not break_route and cur_srv_side in ingame_normal_sides:
-                    return self.back_side(trg_srv_side)
-                # break route. лидер cur_srv_side. догоняющий ingame_adv_side
-                elif (
-                    break_route
-                    and ingame_adv_side is not None
-                    and ingame_adv_side != cur_srv_side
-                ):
-                    return self.back_side(trg_srv_side)
-
-
-class AlertScPursueClf(AlertScPursue):
-    """Зеркальная логика реализуется зеркально сконструируемым объектом.
-    Т.е. например right_srv_side(0, 3) и (3, 0)left_srv_side - в разных об-тах.
-    Our case: back player at 0-3 and receive.
-    """
-
-    rtg_side_cond = ratings.SideCondition(
-        max_rating=cco.RANK_STD_BOTH_ABOVE, max_dif_rating=cco.RANK_STD_MAX_DIF
-    )
-
-    def __init__(
-        self,
-        setname,
-        clf_fun,
-        insetscore,
-        back_srv,
-        srv_leader,
-        skip_cond=remain_soft_main_skip_cond,
-    ):
-        super(AlertScPursueClf, self).__init__(
-            setname=setname,
-            insetscore=insetscore,
-            back_srv=back_srv,
-            srv_leader=srv_leader,
-            skip_cond=skip_cond,
-        )
-        self.clf_fun = clf_fun
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""
-        if self.rtg_side_cond.condition_both_below(match) in (True, None):
-            return False
-        trg_srv_side = AlertScPursue._condition_common(self, match)
-        return trg_srv_side
-
-    def _condition_now(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze current match state.
-        Return back side (if fired), False (if gone), True (if attention)
-        """
-        if (
-            match.score
-            and match.score[-1] == self.insetscore
-            and match.ingame
-            in (None, ("0", "0"), ("15", "0"), ("0", "15"), ("15", "15"))
-        ):
-            pursue_side = (
-                co.LEFT if match.score[-1][0] < match.score[-1][1] else co.RIGHT
-            )
-            if not self.rtg_side_cond.condition(match, pursue_side):
-                log.info(
-                    "{} reject {} {} pursue rtg".format(
-                        self.__class__.__name__, match.name, self.insetscore
-                    )
-                )
-                return False
-            set_opener_side = match.curset_opener_side()
-            backing_side, prob = self.clf_fun(match, set_opener_side)
-            if (backing_side is not None) and allow_back(
-                match, backing_side, self, prob
-            ):
-                if (
-                    self.insetscore in ((0, 1), (1, 0))
-                    and self.setname == "decided"
-                    and allow_back_inset_keep_recovery(
-                        match,
-                        backing_side,
-                        "recovery",
-                        "keep",
-                        "decided",
-                        lambda b_reco, o_keep: (b_reco - 0.39) > (o_keep - 0.60),
-                    )
-                    is False
-                ):
-                    log.info(
-                        "{} reject by inset_keep_recovery:\n{}".format(
-                            self.__class__.__name__, match.tostring()
-                        )
-                    )
-                    return False
-                return backing_side, prob
-            else:
-                return False
-        return True
-
-    def _condition_next(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze for next game from current match state.
-        Return back side (if fired), False (if gone), True (if attention).
-        Here trg_srv_side is our opponent.
-        """
-        return None  # disable early alert as we will use betfair bot
-
-
-class AlertScPursueSet1_Clf(AlertScPursue):
-    """Зеркальная логика реализуется зеркально сконструируемым объектом.
-    Т.е. например right_srv_side(0, 3) и (3, 0)left_srv_side - в разных об-тах.
-    Our case: back player at 0-3 and receive.
-    """
-
-    def __init__(self, insetscore, clf_fun, skip_cond):
-        super(AlertScPursueSet1_Clf, self).__init__(
-            setname="open", insetscore=insetscore, back_srv=False, srv_leader=True
-        )
-        self.clf_fun = clf_fun
-        self.skip_cond = skip_cond
-        self.rtg_side_cond = ratings.SideCondition(max_rating=350, max_dif_rating=220)
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""
-        if self.skip_cond(match):
-            return False
-        if self.rtg_side_cond.condition_both_below(match) in (True, None):
-            return False
-        trg_srv_side = AlertScPursue._condition_common(self, match)
-        if trg_srv_side in (co.LEFT, co.RIGHT):
-            backing_side = self.back_side(trg_srv_side)
-            if not self.rtg_side_cond.condition(match, backing_side):
-                return False
-        return trg_srv_side
-
-    def _condition_now(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze current match state.
-        Return back side (if fired), False (if gone), True (if attention)
-        """
-        if (
-            match.score
-            and match.score[-1] == self.insetscore
-            and match.ingame in (None, ("0", "0"))
-        ):
-            set_open_side = match.curset_opener_side()
-            if set_open_side is None:
-                return False
-            backing_side, prob = self.clf_fun(match, set_open_side=set_open_side)
-            if (backing_side is not None) and allow_back(
-                match, backing_side, self, prob
-            ):
-                return backing_side, prob
-            else:
-                return False
-        return True
-
-    def _condition_next(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze for next game from current match state.
-        Return back side (if fired), False (if gone), True (if attention).
-        Here trg_srv_side is our opponent.
-        """
-        return None  # disable early alert as we will use betfair bot
-
-
-class AlertSc56toTie(AlertScPursue):
-    """Зеркальная логика реализуется зеркально сконструируемым объектом.
-    Т.е. например right_srv_side(6, 5) и (5, 6)left_srv_side - в разных об-тах.
-    Our cases: back player who receive at 6-5 then open on tie (back_setopener=true).
-               back player who serve at 5-6 then close on tie (back_setopener=false).
-    """
-
-    def __init__(
-        self,
-        setname: str,
-        insetscore,
-        back_setopener,
-        min_proba,
-        min_size,
-        max_rating,
-        max_dif_rating,
-    ):
-        assert abs(insetscore[0] - insetscore[1]) == 1, f"bad insetscore {insetscore}"
-        super().__init__(
-            setname=setname,
-            insetscore=insetscore,
-            back_srv=not back_setopener,
-            srv_leader=False,
-            skip_cond=remain_ge_chal_skip_cond,
-        )
-        self.min_proba = min_proba
-        self.min_size = min_size
-        if setname == "open":
-            self.plr_feature_name = "s1_tie_ratio"
-        elif setname == "decided":
-            self.plr_feature_name = "sd_tie_ratio"
-        elif setname == "second":
-            self.plr_feature_name = "s2_under_tie_ratio"
-        else:
-            raise co.TennisError("unexpected setname {}".format(setname))
-
-        self.rtg_side_cond = ratings.SideCondition(
-            max_rating, max_dif_rating, rtg_name="elo"
-        )
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""
-        if match.sex == "atp" and match.best_of_five:
-            return False
-        trg_srv_side = super()._condition_common(match)
-        if trg_srv_side not in (co.LEFT, co.RIGHT):
-            return trg_srv_side
-        cache_val = match.get_cache_value(self.plr_feature_name)
-        if cache_val is False:
-            return False
-        elif cache_val is None:
-            trg_back_side = self.back_side(trg_srv_side)
-            if not self.rtg_side_cond.condition(match, trg_back_side):
-                match.set_cache_value(self.plr_feature_name, False)
-                return False
-            proba = self._get_back_side_advantage_proba(match, trg_back_side)
-            if proba is not None:
-                match.set_cache_value(
-                    self.plr_feature_name,
-                    AlertData(trg_back_side, proba)
-                )
-            else:
-                match.set_cache_value(self.plr_feature_name, False)
-                log.info(
-                    f"{self.__class__.__name__} reject early "
-                    f"trg_srv_side {trg_srv_side} sn {self.setname} "
-                    f"iss {self.insetscore} "
-                    f"back: {trg_back_side}\n\t{match.tostring()}"
-                )
-                return False
-        return trg_srv_side
-
-    def _get_back_side_advantage_proba(self, match, trg_back_side):
-        try:
-            f1, f2 = feature.player_features(match.features, self.plr_feature_name)
-            if (
-                not f1
-                or not f2
-                or f1.value.size < self.min_size
-                or f2.value.size < self.min_size
-            ):
-                return None
-            proba1, proba2 = co.twoside_values(f1.value, f2.value)
-            proba = proba1 if trg_back_side == co.LEFT else proba2
-            if proba > self.min_proba:
-                return proba
-        except cco.FeatureError:
-            return None
-
-    def _condition_now(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze current match state.
-           Return AlertData (if fired), False (if reject),
-           True (attention), None (if nothing happened)
-        """
-        if (
-            match.score
-            and match.score[-1] == self.insetscore
-            and match.ingame
-            in (
-                None,
-                ("0", "0"),
-            )
-        ):
-            cache_val = match.get_cache_value(self.plr_feature_name)
-            if cache_val is False or cache_val is None:
-                return False
-            alert_data = cache_val
-            if allow_back(match, alert_data.back_side, self, alert_data.proba):
-                return alert_data
-            else:
-                return False
-        return True
-
-    def _condition_next(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze for next game from current match state.
-        Return back side (if fired), False (if gone), True (if attention).
-        Here trg_srv_side is our opponent.
-        """
-        return None  # disable early alert as we have some change-over time
-
-
-class AlertScPursueBreakDownEarly(AlertScPursue):
-    """Зеркальная логика реализуется зеркально сконструируемым объектом.
-    Т.е. например right_srv_side(0, 1) и (1, 0)left_srv_side - в разных об-тах
-    """
-
-    def __init__(self, setname, insetscore):
-        super(AlertScPursueBreakDownEarly, self).__init__(
-            setname=setname, insetscore=insetscore, back_srv=False, srv_leader=True
-        )
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""
-        if match.level in ("chal", "team"):
-            return False
-        trg_srv_side = super(AlertScPursueBreakDownEarly, self)._condition_common(match)
-        if trg_srv_side in (co.LEFT, co.RIGHT):
-            backing_side = self.back_side(trg_srv_side)
-            if match.h2h_direct is not None and (
-                (backing_side.is_left() and match.h2h_direct <= -0.95)
-                or (backing_side.is_right() and match.h2h_direct >= 0.95)
-            ):
-                log.info(
-                    "{} reject back bad h2h: {}\n{}".format(
-                        self.__class__.__name__, match.h2h_direct, match.tostring()
-                    )
-                )
-                return False  # h2h is strong against back player
-            fst_bet_chance = match.first_player_bet_chance()
-            if fst_bet_chance is None:
-                return False
-            if fst_bet_chance < 0.1 or fst_bet_chance > 0.9:
-                log.info(
-                    "{} reject too big favor: {} {}\n{}".format(
-                        self.__class__.__name__,
-                        backing_side,
-                        fst_bet_chance,
-                        match.tostring(),
-                    )
-                )
-                return False
-            if (backing_side.is_left() and fst_bet_chance > 0.5) or (
-                backing_side.is_right() and fst_bet_chance < 0.5
-            ):
-                log.info(
-                    "{} reject back {} lftchance: {}\n{}".format(
-                        self.__class__.__name__,
-                        backing_side,
-                        fst_bet_chance,
-                        match.tostring(),
-                    )
-                )
-                return False  # we looked for: back player is NOT favorite
-            vs_incomer_side = match.vs_incomer_advantage_side()
-            if backing_side.is_oppose(vs_incomer_side):
-                log.info(
-                    "{} rejected by vs_incomer_side {} {}".format(
-                        self.__class__.__name__, backing_side, match.tostring()
-                    )
-                )
-                return False
-        return trg_srv_side
-
-    def _condition_next(self, match: LiveMatch, trg_srv_side: Side):
-        """Analyze for next game from current match state.
-        Return back side (if fired), False (if gone), True (if attention)"""
-
-        def get_cur_insetscore():
-            # break_route:
-            if trg_srv_side.is_left():
-                return self.insetscore[0] - 1, self.insetscore[1]
-            else:
-                return self.insetscore[0], self.insetscore[1] - 1
-
-        cur_srv_side = trg_srv_side.fliped()  # inverse serve in prev game
-        ingame_adv_side = ingame_advance_side(match.ingame)
-        cur_insetscore = get_cur_insetscore()
-        if cur_insetscore == match.score[-1]:
-            if ingame_adv_side is not None and ingame_adv_side != cur_srv_side:
-                return self.back_side(trg_srv_side)
-
-
 def allow_back_inset_keep_recovery(
     match, backing_side, back_aspect, opp_aspect, setname, okfun
 ):
@@ -1456,7 +1059,22 @@ def allow_current_coefs(match, alert, backing_side, prob=None):
             return result
 
 
-def allow_back(match, backing_side, alert, prob, case_name=None):
+class AllowBackResult:
+    def __init__(self, code: bool, comment: str):
+        self.code = code
+        self.comment = comment
+
+    def __bool__(self):
+        return bool(self.code)
+
+    def __str__(self):
+        return self.comment
+
+    def __repr__(self):
+        return f'AllowBackResult({self.code}, {self.comment})'
+
+
+def allow_back(match, backing_side, alert, prob, case_name=None) -> AllowBackResult:
     if backing_side.is_oppose(match.recently_won_h2h_side()):
         log.info(
             "{} rejected by recently_won_h2h_side {} {}".format(
@@ -1465,18 +1083,17 @@ def allow_back(match, backing_side, alert, prob, case_name=None):
                 match.tostring(extended=True),
             )
         )
-        return False
+        return AllowBackResult(False, 'recently_won_h2h')
 
-    if feature.is_player_feature(
-        match.features, "retired", is_first=backing_side.is_left()
-    ) or feature.is_player_feature(
-        match.features, "absence", is_first=backing_side.is_left()
-    ):
+    is_retired = feature.is_player_feature(
+        match.features, "retired", is_first=backing_side.is_left())
+    is_absence = feature.is_player_feature(
+        match.features, "absence", is_first=backing_side.is_left())
+    if is_retired or is_absence:
         log.info(
             f"{alert.__class__.__name__} rejected by ret/abs "
-            f"back {backing_side} {match.tostring(extended=True)}"
-        )
-        return False
+            f"back {backing_side} {match.tostring(extended=True)}")
+        return AllowBackResult(False, 'retired' if is_retired else 'absence')
 
     if backing_side.is_oppose(match.last_res_advantage_side()):
         log.info(
@@ -1486,7 +1103,7 @@ def allow_back(match, backing_side, alert, prob, case_name=None):
                 match.tostring(extended=True),
             )
         )
-        return False
+        return AllowBackResult(False, 'last_results')
 
     if prob is not None and prob < 0.75:
         vs_incomer_adv_side = match.vs_incomer_advantage_side()
@@ -1496,7 +1113,7 @@ def allow_back(match, backing_side, alert, prob, case_name=None):
                     alert.__class__.__name__, match.tostring(extended=True)
                 )
             )
-            return False
+            return AllowBackResult(False, 'vs_incomer')
 
     if back_in_blacklist(match, backing_side, case_name):
         log.info(
@@ -1504,15 +1121,9 @@ def allow_back(match, backing_side, alert, prob, case_name=None):
                 alert.__class__.__name__, match.tostring()
             )
         )
-        return False
+        return AllowBackResult(False, 'blacklist')
 
-    # if betfair_client.is_initialized():
-    #     allow_betfair = allow_current_coefs(match, alert, backing_side, prob)
-    #     if allow_betfair is False:
-    #         return False
-    #     if (match.level == 'chal' or match.qualification) and allow_betfair is None:
-    #         return False  # if betfair does silence than market possible is absent
-    return True
+    return AllowBackResult(True, '')
 
 
 def back_in_blacklist(match, backing_side: Side, case_name=None):
@@ -1522,33 +1133,9 @@ def back_in_blacklist(match, backing_side: Side, case_name=None):
     return backplr.name in back_in_blacklist.blacknames_dct[(match.sex, case_name)]
 
 
-# # scheme for getting blacklist (list of id for bad players in our case)
-# MIN_SIZE = 23 #  20 if wta
-# psize = df.groupby(['snd_pid']).size() # got Series, index - pids, values - sizes
-# psize_min = psize[psize >= MIN_SIZE]
-# pid_min = list(psize_min.index) # list of pid (for these players each size >= MIN_SIZE)
-# grouped = df[LABEL_NAME].groupby(df['snd_pid'])
-# black_pids = []
-# for pid, group in grouped:
-#   avg = group.mean() # avg is player's ratio of LABEL_NAME
-#   if avg <= 0.5 and pid in pid_min:
-#       black_pids.append(pid)
 back_in_blacklist.blacknames_dct = {
-    ("wta", None): [
-        "Kyoka Okamura",
-        "Josephine Boualem",
-        "Tamara Curovic",
-        "Elena Bogdan",
-    ],
-    ("atp", None): [
-        "Thomaz Bellucci",
-        "Marek Gengel",
-        "Andrew Whittington",
-        "Pierre Faivre",
-        "Santiago Gonzalez",
-        # low motivation:
-        "Bernard Tomic",
-    ],
+    ("wta", None): [],
+    ("atp", None): [],
     ("atp", "decided_00"): [],
     ("wta", "decided_00"): [],
 }

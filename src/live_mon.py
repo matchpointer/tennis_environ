@@ -1,21 +1,20 @@
 r"""
-в модуле общая логика обработки live обьектов.
+module gives Application with upper level logic
 """
 import os
-import sys
 import copy
 from collections import defaultdict
 import time
 import datetime
 import random
 import argparse
-import unittest
 import winsound
 
 import tkinter
 import tkinter.ttk
 
 from selenium.common.exceptions import TimeoutException
+from requests.exceptions import RequestException
 
 import stopwatch
 
@@ -24,7 +23,6 @@ import log
 import cfg_dir
 import config_personal
 import ratings
-import tennis
 import tennis_time as tt
 import bet_coefs
 import dba
@@ -32,6 +30,7 @@ import sms_svc
 import oncourt_players
 import common_wdriver
 import matchstat
+from clf_common import PosNeg
 import clf_decided_00
 
 import clf_secondset_00
@@ -41,29 +40,29 @@ from live import (
     get_events,
     LiveTourEvent,
     LiveMatch,
-    TourInfo,
     skip_levels_work,
     initialize as live_initialize,
     initialize_players_cache,
-    debug_match_data_save,
-    set_debug_match_name,
-    get_debug_match_name,
 )
+from debug_helper import get_debug_match_name, set_debug_match_name, debug_match_data_save
 from tournament_misc import log_events, events_tostring
 import betfair_client
 
 # import decided_win_by_two_sets_stat
 from live_alerts import (
     AlertMessage,
-    AlertSetDecidedCloserClf,
+    AlertSetDecidedWinClf,
     AlertSet2WinClf,
     AlertScEqualTieRatio,
+    AlertScEqualSetend,
 )
+import predicts_db
 
-DEFAULT_MARKET_NAME = "MATCH_ODDS"
+
+_DEFAULT_MARKET_NAME = "MATCH_ODDS"
 
 
-class EventsFile(object):
+class EventsFile:
     def __init__(self, filename):
         self.fhandler = open(filename, "w+")
         self.periodic_timer = stopwatch.OverTimer(60 + 30)
@@ -90,40 +89,6 @@ class EventsFile(object):
         self.fhandler.close()
 
 
-get_events_from_files = None  # see sample in flashscore.py
-
-
-DEBUG = False
-debug_fhandle = open("./debug_live_mon.txt", "w")
-
-
-def debug_write(data):
-    timestamp = "[" + tt.formated_datetime(datetime.datetime.now()) + "]"
-    debug_fhandle.write(timestamp + " " + data)
-    debug_fhandle.flush()
-
-
-class MatchGenStatTest(unittest.TestCase):
-    def make_tour_info(self):
-        tour_info = TourInfo()
-        tour_info.sex = "wta"
-        tour_info.tour_name = "Indian Wells"
-        tour_info.qualification = False
-        tour_info.level = tennis.Level("masters")
-        tour_info.surface = tennis.Surface("Hard")
-        return tour_info
-
-    def test_tour_event_vesnina_babos(self):
-        tour_event = LiveTourEvent(tour_info=self.make_tour_info())
-        match = LiveMatch(live_event=tour_event)
-        match.date = datetime.date(2017, 3, 14)
-        match.rnd = tennis.Round("Third")
-        match.first_player = tennis.Player(ident=4123, name="Elena Vesnina", cou="RUS")
-        match.second_player = tennis.Player(ident=10600, name="Timea Babos", cou="HUN")
-        match.define_players_tried = True
-        tour_event.matches = [match]
-
-
 root = tkinter.Tk()
 
 
@@ -144,15 +109,14 @@ class Application(tkinter.Frame):
         self.updating = False
         self.alerts_from_sex = defaultdict(list)
         self.make_alerts()
-        self.drv = common_wdriver.wdriver(company_name, headless=True)
-        if not DEBUG:
-            self.drv.start()
-            self.drv.go_live_page()
-            initialize_players_cache(self.drv.page())
+        self.drv = common_wdriver.wdriver(company_name, headless=True, faked=False)
+        self.drv.start()
+        self.drv.go_live_page()
+        initialize_players_cache(self.drv.page())
         self.wake_timer = None  # stopwatch.PointTimer(datetime.datetime(
         # year=2018, month=2, day=11, hour=8, minute=0))
         self.sms_start_timer = stopwatch.PointTimer(
-            datetime.datetime(year=2021, month=2, day=23, hour=7, minute=15)
+            datetime.datetime(year=2021, month=7, day=27, hour=8, minute=20)
         )
 
         row = 0
@@ -246,6 +210,10 @@ class Application(tkinter.Frame):
         clf_secondset_00.initialize()
         sex = "wta"
 
+        self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
+            back_opener=None, strict_min_probas=PosNeg(0.65, 0.65)))
+        self.alerts_from_sex[sex].append(AlertSet2WinClf())
+
         self.alerts_from_sex[sex].append(
             AlertScEqualTieRatio(
                 "decided",
@@ -257,12 +225,32 @@ class Application(tkinter.Frame):
             )
         )
 
-        self.alerts_from_sex[sex].append(AlertSet2WinClf())
-        self.alerts_from_sex[sex].append(AlertSetDecidedCloserClf())
+        # self.alerts_from_sex[sex].append(
+        #     AlertScEqualSetend(
+        #         setname="decided",
+        #         insetscore=(4, 4),
+        #         back_srv=True,
+        #         min_back_ratio=0.7,
+        #         max_lay_ratio=0.55,
+        #         min_size=14,
+        #     )
+        # )
+        # self.alerts_from_sex[sex].append(
+        #     AlertScEqualSetend(
+        #         setname="decided",
+        #         insetscore=(4, 4),
+        #         back_srv=False,
+        #         min_back_ratio=0.7,
+        #         max_lay_ratio=0.55,
+        #         min_size=14,
+        #     )
+        # )
 
         # -------------------------- atp -----------------------------
         sex = "atp"
 
+        self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
+            back_opener=None, strict_min_probas=None))
         self.alerts_from_sex[sex].append(AlertSet2WinClf())
 
         self.alerts_from_sex[sex].append(
@@ -276,7 +264,26 @@ class Application(tkinter.Frame):
             )
         )
 
-        self.alerts_from_sex[sex].append(AlertSetDecidedCloserClf())
+        # self.alerts_from_sex[sex].append(
+        #     AlertScEqualSetend(
+        #         setname="decided",
+        #         insetscore=(4, 4),
+        #         back_srv=True,
+        #         min_back_ratio=0.75,
+        #         max_lay_ratio=0.6,
+        #         min_size=14,
+        #     )
+        # )
+        # self.alerts_from_sex[sex].append(
+        #     AlertScEqualSetend(
+        #         setname="decided",
+        #         insetscore=(4, 4),
+        #         back_srv=False,
+        #         min_back_ratio=0.75,
+        #         max_lay_ratio=0.6,
+        #         min_size=14,
+        #     )
+        # )
 
     def is_slow_mode(self):
         return int(self.timer.threshold) == self.slow_timeout
@@ -321,37 +328,31 @@ class Application(tkinter.Frame):
 
     def get_fresh_events(self):
         fresh_events = []
-        if DEBUG:
+        for try_num in range(1, 4):
             try:
-                fresh_events = next(get_events_from_files)
-            except StopIteration:
-                log.info("StopIteration in debug")
-        else:
-            for try_num in range(1, 4):
+                self.drv.live_page_refresh()
+                fresh_events = get_events(
+                    self.drv.page(),
+                    skip_levels=skip_levels_work(),
+                    company_name=self.company_name)
+                break
+            except (
+                RequestException, UnicodeEncodeError, TimeoutException, ValueError
+            ) as err:
+                # may be inet problems
+                log.error(
+                    "drv.page_source {}\nfail try_num: {}".format(err, try_num),
+                    exc_info=True,
+                )
+                time.sleep(20)
                 try:
-                    self.drv.live_page_refresh()
-                    fresh_events = get_events(
-                        self.drv.page(),
-                        skip_levels=skip_levels_work(),
-                        company_name=self.company_name,
-                    )
-                    break
-                except (UnicodeEncodeError, TimeoutException, ValueError) as err:
-                    # may be inet problems
+                    self.drv.current_page_refresh()
+                except (RequestException, TimeoutException) as err2:
                     log.error(
-                        "drv.page_source {}\nfail try_num: {}".format(err, try_num),
+                        "drv.get {}\nfail try_num: {}".format(err2, try_num),
                         exc_info=True,
                     )
                     time.sleep(20)
-                    try:
-                        self.drv.current_page_refresh()
-                    except TimeoutException as err2:
-                        log.error(
-                            "drv.get {}\nfail try_num: {}".format(err2, try_num),
-                            exc_info=True,
-                        )
-                        time.sleep(20)
-
         return fresh_events
 
     def update_events(self):
@@ -453,7 +454,7 @@ class Application(tkinter.Frame):
                 log.info("wake from sleep to quick mode")
 
             if alert_messages:
-                self.show_alert_messages(alert_messages)
+                self.out_alert_messages(alert_messages)
             else:
                 self.show_silence()
             if is_attention and self.is_slow_mode():
@@ -469,44 +470,56 @@ class Application(tkinter.Frame):
                 int(self.timer.remind_to_overtime() * 1000), self.check_time
             )
 
-    def show_alert_messages(self, alert_messages):
+    def out_alert_messages(self, alert_messages):
         text = "\n".join([a.text for a in alert_messages])
         self.message_lbl["text"] = text
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         Application.bring_to_front()
-        if not DEBUG:
-            if self.betfair_mode():
-                for msg in alert_messages:
-                    if (
-                        msg.case_name == "decided_00" and msg.prob > 0.51
-                    ) or msg.case_name == "secondset_00":
-                        summary_href = msg.summary_href if msg.summary_href else ""
-                        betfair_client.send_message(
-                            DEFAULT_MARKET_NAME,
-                            msg.sex,
-                            msg.case_name,
-                            msg.fst_name,
-                            msg.snd_name,
-                            msg.back_side,
-                            summary_href,
-                            msg.fst_betfair_name,
-                            msg.snd_betfair_name,
-                            msg.prob,
-                        )
-            if self.sms_mode():
-                if not self.sms_start_timer or self.sms_start_timer.overtime():
-                    try:
-                        sms_svc.send_alert_messages(
-                            [
-                                a
-                                for a in alert_messages
-                                if a.case_name != "secondset_win"
-                            ]
-                        )
-                    except sms_svc.SMSError as err:
-                        log.error("{}".format(err))
+        if self.betfair_mode():
+            self.out_betfair_messages(alert_messages)
+        if self.sms_mode():
+            self.out_sms_messages(alert_messages)
         log.info("alerted: " + text)
+
+    def out_sms_messages(self, alert_messages):
+        if not self.sms_start_timer or self.sms_start_timer.overtime():
+            try:
+                sms_svc.send_alert_messages(
+                    [
+                        a
+                        for a in alert_messages
+                        if (a.case_name.startswith("decided_66")
+                            or a.case_name.startswith("decided_44"))
+                    ]
+                )
+            except sms_svc.SMSError as err:
+                log.error("{}".format(err))
+
+    @staticmethod
+    def out_betfair_messages(alert_messages):
+        for msg in alert_messages:
+            if (
+                msg.case_name == "decided_00"
+                or (msg.sex == 'wta' and msg.case_name == "secondset_00")
+            ):
+                summary_href = msg.summary_href if msg.summary_href else ""
+                betfair_client.send_message(
+                    _DEFAULT_MARKET_NAME,
+                    msg.sex,
+                    msg.case_name,
+                    msg.fst_name,
+                    msg.snd_name,
+                    msg.back_side,
+                    summary_href,
+                    msg.fst_betfair_name,
+                    msg.snd_betfair_name,
+                    msg.prob,
+                    msg.book_prob,
+                    msg.fst_id,
+                    msg.snd_id,
+                    msg.comment,
+                )
 
     def show_silence(self):
         self.message_lbl["text"] = "Silence..."
@@ -519,18 +532,15 @@ class Application(tkinter.Frame):
 
 def parse_command_line_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gui", action="store_true")
     parser.add_argument("--sms", action="store_true")
     parser.add_argument("--betfair", action="store_true")
     parser.add_argument("--company_name", choices=["BC", "FS"], default="FS")
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    args = parse_command_line_args()
-    log.initialize(co.logname(__file__), file_level="info", console_level="info")
-    log.info("started with company_name {} gui {}".format(args.company_name, args.gui))
-    config_personal.initialize_from_file('personal.cfg', sign='matchpointer')
+def main():
+    log.info("started with company_name {}".format(args.company_name))
+    config_personal.initialize_from_file('../personal.cfg', sign='matchpointer')
     if args.betfair:
         betfair_client.initialize()
     dba.open_connect()
@@ -544,69 +554,69 @@ if __name__ == "__main__":
     ratings.Rating.register_rtg_name("elo_alt")
     matchstat.initialize(
         min_date=(
-            tt.past_monday_date(datetime.date.today())
-            - datetime.timedelta(days=7 * matchstat.HIST_WEEKS_NUM)
+                tt.past_monday_date(datetime.date.today())
+                - datetime.timedelta(days=7 * matchstat.HIST_WEEKS_NUM)
         ),
         time_reverse=True,
         tour_surface=True,
     )
-    if args.gui:
-        decided_set.initialize_results(
-            sex=None, min_date=LiveMatch.min_decset_date, max_date=datetime.date.today()
-        )
-        date = tt.past_monday_date(datetime.date.today())
-        bet_coefs.initialize(sex="wta", min_date=date - datetime.timedelta(days=7))
-        bet_coefs.initialize(sex="atp", min_date=date - datetime.timedelta(days=7))
-        # for fatigue, live-matches details(rnd-details, tour.level, tour.surface):
-        weeked_tours.initialize_sex(
-            "wta",
-            min_date=date - datetime.timedelta(days=7 * 55),
-            max_date=date + datetime.timedelta(days=11),
-            with_today=True,
-            with_paired=True,
-            with_ratings=True,
-            with_bets=True,
-            with_stat=True,
-            rnd_detailing=True,
-        )
-        weeked_tours.initialize_sex(
-            "atp",
-            min_date=date - datetime.timedelta(days=7 * 55),
-            max_date=date + datetime.timedelta(days=11),
-            with_today=True,
-            with_paired=True,
-            with_ratings=True,
-            with_bets=True,
-            with_stat=True,
-            rnd_detailing=True,
-        )
-        weeked_tours.use_tail_tours_cache = True
-        # impgames_stat.initialize_results(
-        #     'wta', min_date=datetime.date.today() - datetime.timedelta(
-        #                                      days=impgames_stat.HISTORY_DAYS))
-        # impgames_stat.initialize_results(
-        #     'atp', min_date=datetime.date.today() - datetime.timedelta(
-        #                                      days=impgames_stat.HISTORY_DAYS))
-        # tie_stat.initialize_results(sex=None,
-        #                             min_date=date - datetime.timedelta(days=365 * 3),
-        #                             max_date=None)
-        live_initialize()
-        set_debug_match_name("Papashvili D. - Kremnev A.")
-        log.info("DEBUG_MATCH_DATA_NAME: {}".format(get_debug_match_name()))
-        app = Application(
-            company_name=args.company_name, quick_timeout=2.0, slow_timeout=132
-        )
-        app.master.title("Live monitor")
-        app.mainloop()
-        if not DEBUG:
-            app.drv.stop()
-        app.drv = None
-        app.events_file.close()
+    decided_set.initialize_results(
+        sex=None, min_date=LiveMatch.min_decset_date, max_date=datetime.date.today()
+    )
+    past_monday = tt.past_monday_date(datetime.date.today())
+    bet_coefs.initialize(sex="wta", min_date=past_monday - datetime.timedelta(days=7))
+    bet_coefs.initialize(sex="atp", min_date=past_monday - datetime.timedelta(days=7))
+    # for fatigue, live-matches details(rnd-details, tour.level, tour.surface):
+    weeked_tours.initialize_sex(
+        "wta",
+        min_date=past_monday - datetime.timedelta(days=7 * 55),
+        max_date=past_monday + datetime.timedelta(days=11),
+        with_today=True,
+        with_paired=True,
+        with_ratings=True,
+        with_bets=True,
+        with_stat=True,
+        rnd_detailing=True,
+    )
+    weeked_tours.initialize_sex(
+        "atp",
+        min_date=past_monday - datetime.timedelta(days=7 * 55),
+        max_date=past_monday + datetime.timedelta(days=11),
+        with_today=True,
+        with_paired=True,
+        with_ratings=True,
+        with_bets=True,
+        with_stat=True,
+        rnd_detailing=True,
+    )
+    weeked_tours.use_tail_tours_cache = True
+    # impgames_stat.initialize_results(
+    #     'wta', min_date=datetime.date.today() - datetime.timedelta(
+    #                                      days=impgames_stat.HISTORY_DAYS))
+    # impgames_stat.initialize_results(
+    #     'atp', min_date=datetime.date.today() - datetime.timedelta(
+    #                                      days=impgames_stat.HISTORY_DAYS))
+    # tie_stat.initialize_results(sex=None,
+    #                             min_date=now_date - datetime.timedelta(days=365 * 3),
+    #                             max_date=None)
+    live_initialize()
+    # set_debug_match_name("Papashvili D. - Kremnev A.")
+    # log.info("DEBUG_MATCH_DATA_NAME: {}".format(get_debug_match_name()))
+    app = Application(
+        company_name=args.company_name, quick_timeout=2.0, slow_timeout=132
+    )
+    app.master.title("Live monitor")
+    predicts_db.initialize()
+    app.mainloop()
+    log.info("Live monitor exiting")
+    app.drv.stop()
+    app.drv = None
+    app.events_file.close()
+    predicts_db.finalize()
+    dba.close_connect()
 
-        dba.close_connect()
-        debug_fhandle.close()
-        sys.exit(0)
-    else:
-        unittest.main()
-        dba.close_connect()
-        debug_fhandle.close()
+
+if __name__ == "__main__":
+    args = parse_command_line_args()
+    log.initialize(co.logname(__file__), file_level="info", console_level="info")
+    main()

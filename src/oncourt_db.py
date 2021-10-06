@@ -1,10 +1,15 @@
-# -*- coding: utf-8 -*-
+"""
+модуль для облегчения работы с базой oncourt:
+дает константы минимальных дат турниров.
+get_name_level(...) - вернет (имя турнира, уровень турнира)
+                    например ('Rome', Level('masters'))
+get_money(...) - извлечение денежной суммы (с помощью regexpr)
+"""
+
 import re
-import unittest
 import datetime
 
 import common as co
-import log
 
 MIN_WTA_TOUR_DATE = datetime.date(1997, 1, 1)
 MIN_ATP_TOUR_DATE = datetime.date(1990, 1, 1)
@@ -42,14 +47,6 @@ def remove_middle_cap_item_len2(text):
 remove_middle_cap_item_len2.BEGIN_MID_END_RE = re.compile(
     r"^(?P<begin>[a-zA-Z].*)(?P<mid> [A-Z][A-Z], )(?P<end>[a-zA-Z].*)$"
 )
-
-
-class RemoveMidItemTest(unittest.TestCase):
-    def test_equal(self):
-        self.assertEqual(remove_middle_cap_item_len2("be, PO, fin1."), "be, fin1.")
-
-    def test_not_change(self):
-        self.assertEqual(remove_middle_cap_item_len2("be, Pi, fin1."), "be, Pi, fin1.")
 
 
 def _atp_name_future_level(raw_name):
@@ -98,11 +95,11 @@ def _wta_name_future_level(raw_name, db_money=None):
     return name, level
 
 
-def _is_masters_cup(sex, raw_name, rank, date):
+def _is_masters_cup(sex, raw_name, rank, tour_date: datetime.date):
     if (
         sex == "atp"
-        and date is not None
-        and date.month in (10, 11)
+        and tour_date is not None
+        and tour_date.month in (10, 11)
         and rank == 3
         and (
             "Championship" in raw_name
@@ -113,9 +110,12 @@ def _is_masters_cup(sex, raw_name, rank, date):
         return True
     if (
         sex == "wta"
-        and date is not None
-        and date.month in (10, 11)
-        and ((rank == 2 and date.year <= 1998) or (rank == 3 and date.year > 1998))
+        and tour_date is not None
+        and tour_date.month in (10, 11)
+        and (
+            (rank == 2 and tour_date.year <= 1998)
+            or (rank == 3 and tour_date.year > 1998)
+        )
         and "Championships" in raw_name
         and "Advanta Championships" not in raw_name
         and "European Championships" not in raw_name
@@ -124,6 +124,7 @@ def _is_masters_cup(sex, raw_name, rank, date):
 
 
 def get_name_level(sex, raw_name, rank, money, date=None):
+    """ вернет (имя турнира, уровень турнира) например ('Rome', Level('masters')) """
     from tennis import Level
 
     if sex == "atp":
@@ -178,52 +179,13 @@ def get_name_level(sex, raw_name, rank, money, date=None):
     return name, Level("chal")
 
 
-class RegexTest(unittest.TestCase):
-    def test_atp_name_future_level_simple(self):
-        name, level = _atp_name_future_level("Bulgaria-w1")
-        self.assertEqual(level, "future")
-        self.assertEqual(name, "Bulgaria")
-
-    def test_atp_cou_future_pref(self):
-        mch = ATP_COU_FUTURE_PREF_RE.match("Turkey F1 (Antalya)")
-        self.assertTrue(mch is not None)
-        self.assertEqual("Turkey", mch.group("country"))
-        self.assertEqual("F1", mch.group("future_level"))
-
-    def test_atp_inbrackets_tourname(self):
-        mch = ATP_FUTURE_INBRACKETS_TOURNAME_RE.match("Turkey F1 (Antalya)")
-        self.assertTrue(mch is not None)
-        self.assertEqual("Antalya", mch.group("name"))
-
-    def test_atp_money_tourname(self):
-        mch = ATP_MONEY_TOURNAME_RE.match("M25 Antalya")
-        self.assertTrue(mch is not None)
-        self.assertEqual("Antalya", mch.group("name"))
-        self.assertEqual("25", mch.group("money"))
-
-        mch = ATP_MONEY_TOURNAME_RE.match("M30 Hong Kong")
-        self.assertTrue(mch is not None)
-        self.assertEqual("Hong Kong", mch.group("name"))
-        self.assertEqual("30", mch.group("money"))
-
-        mch = ATP_MONEY_TOURNAME_RE.match("M15+H Antalya")
-        self.assertTrue(mch is not None)
-        self.assertEqual("Antalya", mch.group("name"))
-        self.assertEqual("15", mch.group("money"))
-
-    def test_wta_tourname(self):
-        mch = WTA_MONEY_TOURNAME_RE.match("W25 Antalya")
-        self.assertTrue(mch is not None)
-        self.assertEqual("Antalya", mch.group("name"))
-        self.assertEqual("25", mch.group("money"))
-
-
 MONEY_RE = re.compile(
     r"(?P<currency>(A\$|\$|L|в‚¬))?(?P<value>([1-9][.0-9]*))(?P<multier>[KM])(\+H)?"
 )
 
 
 def get_money(text):
+    """ извлечение денежной суммы (с помощью regexpr) """
     if not text:
         return None
     raw_text = co.to_ascii(text.replace(",", ".").strip())
@@ -235,21 +197,3 @@ def get_money(text):
         elif match.group("multier") == "M":
             return value * 1000000
     return None
-
-
-class ParseMoneyTest(unittest.TestCase):
-    def test_parse(self):
-        self.assertEqual(get_money("$10K"), 10000.0)
-        self.assertEqual(get_money("$10M"), 10000000.0)
-        self.assertEqual(get_money("$10K+H"), 10000.0)
-        self.assertEqual(get_money("$1,34M"), 1340000.0)
-        self.assertEqual(get_money("$1.34M"), 1340000.0)
-        self.assertEqual(get_money("L4.946M"), 4946000.0)
-        self.assertEqual(get_money("16M"), 16000000.0)
-
-
-if __name__ == "__main__":
-    log.initialize(
-        co.logname(__file__, test=True), file_level="debug", console_level="debug"
-    )
-    unittest.main()

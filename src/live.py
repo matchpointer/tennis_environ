@@ -1,42 +1,30 @@
-# -*- coding: utf-8 -*-
 r"""
-в модуль предоставляет live objects (flashscore).
+module gives main entities for live.
 """
 import copy
 import datetime
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from typing import Optional
 from enum import IntEnum
 
 import common as co
-import config_file as cf
-import decided_set
 import feature
-import get_features
-import inset_keep_recovery
 import last_results
 import log
-from bet import WinCoefs
-import matchstat
 import pre_live_dir
 import ratings
 import report_line as rl
 import score as sc
-import set2_after_set1loss_stat
 import stat_cont as st
 import stopwatch
 import tennis
-import tennis_parse
+import player_name_ident
 import tennis_time as tt
-import total
 import tournament as trmt
 import weeked_tours
-import trail_choke_stat
-import tie_stat
 from clf_common import FeatureError
-import after_tie_perf_stat
-import atfirst_after
-import impgames_stat
+from live_tourinfo import TourInfo
+from tour_name import TourName
 
 
 class LiveEventToskipError(co.TennisError):
@@ -119,179 +107,6 @@ def back_year_weeknums(max_weeknum_dist):
 
 back_year_weeknums.lst = None
 back_year_weeknums.max_dist = None
-
-
-class TourInfo(object):
-    def __init__(
-        self,
-        sex=None,
-        tour_name="",
-        surface=None,
-        level=None,
-        qualification=False,
-        cou=None,
-        doubles=None,
-        teams=None,
-        exhibition=False,
-        itf=None,
-    ):
-        self.teams = teams
-        self.sex = sex
-        self.doubles = doubles
-        self.surface = surface
-        self.exhibition = exhibition
-        self.tour_name = tour_name
-        self.qualification = qualification
-        self.level = level
-        self.cou = cou
-        self.itf = itf
-
-    def __str__(self):
-        result = "<{}> {} {} {}".format(
-            self.level, self.sex, self.tour_name, self.surface
-        )
-        if self.qualification:
-            result += " qual"
-        if self.doubles:
-            result += " doubles"
-        return result
-
-    def __eq__(self, other):
-        def surf_equal(one, two):
-            if one in ("Hard", "Carpet") and two in ("Hard", "Carpet"):
-                return True
-            return one == two
-
-        return (
-            self.tour_name == other.tour_name
-            and self.sex == other.sex
-            and self.teams == other.teams
-            and self.qualification == other.qualification
-            and self.doubles == other.doubles
-            and surf_equal(self.surface, other.surface)
-            and self.itf == other.itf
-        )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    @property
-    def grand_slam(self):
-        return self.level == "gs"
-
-    @property
-    def best_of_five(self):
-        result = None
-        if self.sex == "wta":
-            result = False
-        elif self.sex == "atp":
-            if self.grand_slam:
-                if not self.qualification:
-                    result = True
-                else:
-                    result = "Wimbledon" in self.tour_name  # at Wim qualify is bo5
-            else:
-                result = self.teams and not self.doubles
-        return result
-
-    @property
-    def decided_tiebreak(self) -> Optional[bool]:
-        return sc.decided_tiebreak(
-            self.sex, datetime.date.today().year, self.tour_name, self.qualification
-        )
-
-    def dates_range_for_query(self, match_date):
-        """return min_date, max_date for sql query in semiopen style:
-        min_date <= x < max_date"""
-        if match_date is None:
-            match_date = datetime.date.today()
-        match_past_monday = tt.past_monday_date(match_date)
-        match_further_monday = match_past_monday + datetime.timedelta(days=7)
-        if self.itf:
-            if self.qualification and match_date.isoweekday() in (6, 7):
-                min_date = match_further_monday
-                max_date = min_date + datetime.timedelta(days=7)
-            else:
-                min_date = match_past_monday
-                max_date = match_further_monday
-        else:
-            if self.grand_slam:
-                # самый широкий интервал
-                min_date = match_past_monday - datetime.timedelta(days=14)
-                max_date = match_further_monday + datetime.timedelta(days=14)
-            else:
-                # напр. 2-х недельный турнир играется (поэтому интервал чуть шире)
-                min_date = match_past_monday - datetime.timedelta(days=7)
-                max_date = match_further_monday + datetime.timedelta(days=7)
-        return min_date, max_date
-
-    @staticmethod
-    def tour_name_map_to_oncourt(sex, tour_name):
-        section = "{}-tours-map-to-oncourt".format(sex)
-        if cf.has_section(section) and cf.has_option(section, tour_name):
-            return cf.getval(section, tour_name)
-        return tour_name
-
-
-DEBUG_MATCH_NAME = "no debug"
-
-DebugMatchData = namedtuple("DebugMatchData", "score ingame left_service")
-
-debug_timed_data_seq = list()  # list of (time, DebugMatchData) # point scores seq
-
-debug_match_feat_dicts = {}  # casename -> feat_dict
-
-
-def get_debug_match_name():
-    return DEBUG_MATCH_NAME
-
-
-def set_debug_match_name(name):
-    global DEBUG_MATCH_NAME
-    DEBUG_MATCH_NAME = name
-
-
-def add_debug_match_feat_dict(casename, feat_dict):
-    debug_match_feat_dicts[casename] = copy.copy(feat_dict)
-
-
-def add_debug_match_data(score, ingame, left_service):
-    match_data = DebugMatchData(score, ingame, left_service)
-    if not debug_timed_data_seq or (
-        debug_timed_data_seq and (debug_timed_data_seq[-1][1] != match_data)
-    ):
-        debug_timed_data_seq.append((datetime.datetime.now(), match_data))
-
-
-def debug_match_data_save():
-    def get_line():
-        if match_data.left_service is None:
-            srv = "None"
-        elif match_data.left_service:
-            srv = "Left"
-        else:
-            srv = "Right"
-        return "{:02d}:{:02d}:{:02d} {} {} {}\n".format(
-            dtime.hour,
-            dtime.minute,
-            dtime.second,
-            str(match_data.score),
-            match_data.ingame,
-            srv,
-        )
-
-    filename = "./debug_match_data.txt"
-    with open(filename, "w") as fh:
-        fh.write(DEBUG_MATCH_NAME + "\n")
-        for (dtime, match_data) in debug_timed_data_seq:
-            fh.write(get_line())
-
-    filename = "./debug_match_feat_dicts.txt"
-    with open(filename, "w") as fh:
-        fh.write(DEBUG_MATCH_NAME + "\n")
-        for casename, feat_dict in debug_match_feat_dicts.items():
-            fh.write(" ----------- case {} -----------------\n".format(casename))
-            fh.write("{}\n".format(feat_dict))
 
 
 class LiveMatch(tennis.Match):
@@ -383,7 +198,7 @@ class LiveMatch(tennis.Match):
             return self.live_event.surface
 
     @property
-    def tour_name(self):
+    def tour_name(self) -> Optional[TourName]:
         if self.live_event is not None:
             return self.live_event.tour_name
 
@@ -475,9 +290,6 @@ class LiveMatch(tennis.Match):
             if left_service_new is not None and left_service_new != left_service:
                 left_service = left_service_new
 
-        # if self.name == DEBUG_MATCH_NAME:
-        #     add_debug_match_data(score, ingame, left_service)
-
         scores_same = (self.score, self.ingame, self.left_service) == (
             score,
             ingame,
@@ -567,11 +379,11 @@ class LiveMatch(tennis.Match):
         if len(abbr_names) == 2:
             timer = stopwatch.Timer()
             if not self.first_player:
-                self.first_player = tennis_parse.identify_player(
+                self.first_player = player_name_ident.identify_player(
                     company_name, sex, abbr_names[0].strip()
                 )
             if not self.second_player:
-                self.second_player = tennis_parse.identify_player(
+                self.second_player = player_name_ident.identify_player(
                     company_name, sex, abbr_names[1].strip()
                 )
             if self.first_player and self.second_player:
@@ -585,196 +397,7 @@ class LiveMatch(tennis.Match):
                 self.snd_last_res = last_results.LastResults(
                     sex, self.second_player.ident, weeks_ago=5
                 )
-                self.decset_ratio_dif = decided_set.get_dif_ratio(
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    min_date=self.min_decset_date,
-                    max_date=datetime.date.today(),
-                )
-                self.decset_bonus_dif = decided_set.get_dif_bonus(
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    min_date=self.min_decset_date,
-                    max_date=datetime.date.today(),
-                )
-                (
-                    self.hist_fst_srv_win,
-                    self.hist_fst_rcv_win,
-                ) = matchstat.player_srvrcv_win(
-                    self.sex,
-                    self.first_player.ident,
-                    back_year_weeknums(max_weeknum_dist=matchstat.HIST_WEEKS_NUM),
-                    self.surface,
-                    12,
-                )
-                (
-                    self.hist_snd_srv_win,
-                    self.hist_snd_rcv_win,
-                ) = matchstat.player_srvrcv_win(
-                    self.sex,
-                    self.second_player.ident,
-                    back_year_weeknums(max_weeknum_dist=matchstat.HIST_WEEKS_NUM),
-                    self.surface,
-                    12,
-                )
-                self.features = []
-                self.features.append(
-                    feature.RigidFeature(
-                        "recently_winner_id", self.head_to_head.recently_won_player_id()
-                    )
-                )
-                get_features.add_fatigue_features(
-                    self.features,
-                    self.sex,
-                    back_year_weeknums(max_weeknum_dist=30),
-                    self,
-                    rnd=None,
-                )
-                get_features.add_prevyear_tour_features(
-                    self.features,
-                    self.sex,
-                    back_year_weeknums(max_weeknum_dist=56),
-                    self.live_event,
-                    self,
-                )
-                f1tradp, f2tradp = get_features.tour_adapt_features(None, self)
-                self.features.append(f1tradp)
-                self.features.append(f2tradp)
-                f1set2r, f2set2r = set2_after_set1loss_stat.read_features_pair(
-                    self.sex,
-                    "set2win_after_set1loss",
-                    self.first_player.ident,
-                    self.second_player.ident,
-                )
-                self.features.append(f1set2r)
-                self.features.append(f2set2r)
-                f1set2k, f2set2k = set2_after_set1loss_stat.read_features_pair(
-                    self.sex,
-                    "set2win_after_set1win",
-                    self.first_player.ident,
-                    self.second_player.ident,
-                )
-                self.features.append(f1set2k)
-                self.features.append(f2set2k)
-
-                inset_keep_recovery.add_read_features(
-                    self.features,
-                    self.sex,
-                    ("decided",),
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    sizes_shift=-3,
-                    feat_suffix="_sh-3",
-                )
-
-                trail_choke_stat.add_agr_read_features(
-                    self.features,
-                    self.sex,
-                    "trail",
-                    None,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                )
-                trail_choke_stat.add_agr_read_features(
-                    self.features,
-                    self.sex,
-                    "choke",
-                    None,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                )
-
-                impgames_stat.add_read_features(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    aspect_name="setend",
-                    set_name="decided",
-                )
-                impgames_stat.add_read_features(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    aspect_name="onstaymatch",
-                    set_name="decided",
-                )
-                impgames_stat.add_read_features(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    aspect_name="onmatch",
-                    set_name="decided",
-                )
-
-                tie_stat.add_read_sv_features_pair(
-                    self.features,
-                    "s1_tie_ratio",
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    ("open",),
-                    min_size=15,
-                    is_ratio=True,
-                )
-                tie_stat.add_read_sv_features_pair(
-                    self.features,
-                    "sd_tie_ratio",
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    ("decided",),
-                    min_size=12,
-                    is_ratio=True,
-                )
-
-                tie_stat.add_read_sv_features_pair(
-                    self.features,
-                    "s2_tie_ratio_press",
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    ("press",) if self.sex == "wta" else ("press", "press2"),
-                    min_size=15 if self.sex == "atp" else 12,
-                    is_ratio=True,
-                )
-                tie_stat.add_read_sv_features_pair(
-                    self.features,
-                    "s2_tie_ratio_under",
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    ("under",) if self.sex == "wta" else ("under", "under2"),
-                    min_size=15 if self.sex == "atp" else 12,
-                    is_ratio=True,
-                )
-
-                after_tie_perf_stat.add_read_features_pair(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    after_tie_perf_stat.ASPECT_PRESS,
-                )
-                after_tie_perf_stat.add_read_features_pair(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    after_tie_perf_stat.ASPECT_UNDER,
-                )
-
-                atfirst_after.add_read_features(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                )
-
+                # other features temporary removed
             self.def_plr_seconds = timer.elapsed
         return self.players_defined()
 
@@ -852,50 +475,7 @@ class LiveMatch(tennis.Match):
 
         self.features = []
         simple_feature("recently_winner_id")
-        plr_feature("fatigue")
-        plr_feature("plr_tour_adapt")
-        plr_feature("prevyear_tour_rnd")
-        plr_feature("set2win_after_set1loss")
-        plr_feature("set2win_after_set1win")
-        plr_feature("decided_begin_sh-3")
-        plr_feature("decided_keep_sh-3")
-        plr_feature("decided_recovery_sh-3")
-        plr_feature("trail")
-        plr_feature("choke")
-        plr_feature("absence")
-        plr_feature("retired")
-        plr_feature(after_tie_perf_stat.ASPECT_UNDER)
-        plr_feature(after_tie_perf_stat.ASPECT_PRESS)
-        # plr_feature('onset_srv', prefix='sa_')
-        # plr_feature('onset_rcv', prefix='sa_')
-        # plr_feature('setend_srv', prefix='sa_')
-        # plr_feature('setend_rcv', prefix='sa_')
-        plr_sv_feature("s1_tie_ratio")
-        plr_sv_feature("sd_tie_ratio")
-        plr_sv_feature("s2_tie_ratio_press")
-        plr_sv_feature("s2_tie_ratio_under")
-        plr_sv_feature("decided_setend_srv")
-        plr_sv_feature("decided_onstaymatch_srv")
-        plr_sv_feature("decided_onmatch_srv")
-
-        if "fst_win_coef" in dct and "snd_win_coef" in dct:
-            fst_wcoef, snd_wcoef = dct["fst_win_coef"], dct["snd_win_coef"]
-            if fst_wcoef is not None and snd_wcoef is not None:
-                if not self.offer.win_coefs:
-                    self.offer.win_coefs = WinCoefs(fst_wcoef, snd_wcoef)
-
-        if "fst_draw_status" in dct and "snd_draw_status" in dct:
-            self.first_draw_status = dct["fst_draw_status"]
-            self.second_draw_status = dct["snd_draw_status"]
-
-        if "fst_last_res" in dct:
-            self.fst_last_res = last_results.LastResults.from_week_results(
-                dct["fst_last_res"]
-            )
-        if "snd_last_res" in dct:
-            self.snd_last_res = last_results.LastResults.from_week_results(
-                dct["snd_last_res"]
-            )
+        # other features temporary removed
 
     def abbr_rating_info(self, rtg_name="elo"):
         result = "-"
@@ -976,12 +556,6 @@ class LiveMatch(tennis.Match):
         ):
             return None  # players are deep in tournament
         fst_bonuses, snd_bonuses = 0, 0
-        # fst_ratio = self.fst_last_res.best_win_streak_ratio(min_ratio=0.777, min_size=8)
-        # snd_ratio = self.snd_last_res.best_win_streak_ratio(min_ratio=0.777, min_size=8)
-        # if fst_ratio and fst_ratio > (snd_ratio + 0.2):
-        #     fst_bonuses += 1
-        # if not fst_ratio and snd_ratio > (fst_ratio + 0.2):
-        #     snd_bonuses += 1
 
         fst_poor = self.fst_last_res.poor_practice()
         snd_poor = self.snd_last_res.poor_practice()
@@ -1106,7 +680,7 @@ class LiveMatch(tennis.Match):
 
 class LiveTourEvent(object):
     def __init__(self, tour_info=None, matches=None):
-        self.tour_info = tour_info
+        self.tour_info: Optional[TourInfo] = tour_info
         self.tour_id = None
         self.matches = matches if matches is not None else []
         self.is_special = None  # True означает ставки не на победу (betcity)
@@ -1205,21 +779,6 @@ class LiveTourEvent(object):
                 for fname, fval in dct.items():
                     self.features.append(feature.RigidFeature(name=fname, value=fval))
                 return
-            aset_sv = total.get_tour_avgset(
-                self.sex,
-                self.level == "chal",
-                self.best_of_five,
-                self.surface,
-                self.tour_name,
-                self.qualification,
-                max_year=datetime.date.today().year - 1,
-            )
-            if aset_sv:
-                self.features.append(
-                    feature.RigidFeature(name="tour_avgset", value=aset_sv.value)
-                )
-                dct = {"tour_avgset": aset_sv.value}
-                pre_live_dir.save_data(self.pre_live_name(), dct)
 
     def define_level(self):
         if self.tour_info is not None and (
@@ -1275,7 +834,7 @@ class LiveTourEvent(object):
             return self.tour_info.qualification
 
     @property
-    def tour_name(self):
+    def tour_name(self) -> Optional[TourName]:
         if self.tour_info:
             return self.tour_info.tour_name
 
@@ -1293,40 +852,3 @@ class LiveTourEvent(object):
 
     def __ne__(self, other):
         return not self.__eq__(other)
-
-
-DEBUG_MATCH = ""
-
-debug_fhandle = open("./debug_live.txt", "w")
-
-
-def debug_write(data):
-    timestamp = "[" + tt.formated_datetime(datetime.datetime.now()) + "]"
-    debug_fhandle.write(timestamp + " " + data + "\n")
-    debug_fhandle.flush()
-
-
-class GetEventsFromFiles(object):
-    """typical sample use:
-    get_events_from_files = iter(GetEventsFromFiles(
-                                     ['./live_mon_cur_page_1.html',
-                                      './live_mon_cur_page_2.html',
-                                      './live_mon_cur_page_3.html']))
-    ...
-    events = next(get_events_from_files)
-    """
-
-    def __init__(self, filenames):
-        self.filenames = list(filenames)
-
-    @staticmethod
-    def events_from_file(filename):
-        from file_utils import read
-
-        wpage = read(filename=filename)
-        events = get_events(webpage=wpage, skip_levels=skip_levels_default())
-        return events
-
-    def __iter__(self):
-        return iter([self.events_from_file(fn) for fn in self.filenames])
-

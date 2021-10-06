@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
+"""
+module for defining player features: atfirst_after_absence, atfirst_after_retired
+"""
 import os
-import sys
 import datetime
-import unittest
 from collections import defaultdict, namedtuple
-import argparse
 from contextlib import closing
 from typing import List, Set
 
@@ -12,7 +11,6 @@ import log
 import cfg_dir
 import common as co
 import file_utils as fu
-import oncourt_players
 import score as sc
 import dba
 import feature
@@ -31,8 +29,6 @@ PAST_YEARS = 4
 # глубина отката в прошлое от сегодня для фиксации факта снятия
 MAX_DAYS_FOR_RETIRED = 30 * 4
 
-
-# AspectType = Union[Literal[ASPECT_ABSENCE], Literal[ASPECT_RETIRED]]
 
 root_dirname = cfg_dir.pre_live_dir(ROOT)
 
@@ -66,11 +62,6 @@ def get_players_results(sex: str, aspect: str, date: datetime.date):
 
 
 get_players_results.cache = dict()  # (sex, aspect, date) -> List[PlayerResult]
-
-
-class ReadFilesTest(unittest.TestCase):
-    def test_read(self):
-        pass
 
 
 PlayerResult = namedtuple("PlayerResult", "id days_ago")
@@ -168,9 +159,7 @@ def get_presence_results(
              where games.ID_T_G = tours.ID_T 
                and games.ID1_G = fst_plr.ID_P
                and (tours.NAME_T Not Like '%juniors%')
-               and (fst_plr.NAME_P Not Like '%/%') """.format(
-        sex
-    )
+               and (fst_plr.NAME_P Not Like '%/%') """.format(sex)
     sql += dba.sql_dates_condition(min_date, max_date, dator="games.DATE_G")
     sql += " order by games.DATE_G desc;"
     with closing(dba.get_connect().cursor()) as cursor:
@@ -226,55 +215,3 @@ def _read_players_results(
 def players_filename(sex, aspect, date):
     return f"{root_dirname}/{co.date_to_str(date)}_{sex}_{aspect}.txt"
 
-
-def parse_command_line_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--sex", choices=["wta", "atp"])
-    return parser.parse_args()
-
-
-def test_add_features():
-    pid = 8696
-    features = []
-    add_read_aspect_feature(
-        features, "wta", ASPECT_RETIRED, datetime.date.today(), pid, "fst"
-    )
-    print(f"feat len {len(features)}")
-    if features:
-        print(f"feat {features[0].name} {features[0].value}")
-
-
-def test_init_day():
-    import common_wdriver
-    from live import get_events, MatchStatus, skip_levels_work
-
-    oncourt_players.initialize("wta")
-    oncourt_players.initialize("atp")
-
-    drv = common_wdriver.wdriver(company_name="FS", headless=True)
-    drv.start()
-    drv.go_live_page()
-
-    initialize_day(
-        get_events(
-            drv.page(),
-            skip_levels=skip_levels_work(),
-            match_status=MatchStatus.scheduled,
-        ),
-        datetime.date.today(),
-    )
-
-
-if __name__ == "__main__":
-    args = parse_command_line_args()
-    # if args.stat:
-    #     log.initialize(co.logname(__file__, instance=str(args.sex)),
-    #                    file_level='debug', console_level='info')
-    #     # sys.exit(do_stat())
-    # else:
-    log.initialize(co.logname(__file__, test=True), "info", "info")
-    dba.open_connect()
-    test_init_day()
-    # unittest.main()
-    dba.close_connect()
-    sys.exit(0)

@@ -1,19 +1,21 @@
 r"""
-в модуле логика обработки матчей которые вскоре станут live
+module gives standalone process (prepare data) for matches which soon be live.
 """
 import sys
 import signal
+from typing import Optional
+from common_wdriver import WDriver, wdriver
 
-drv = None
+_drv: Optional[WDriver] = None
 
 
 def signal_handler(signal, frame):
     print("\nprogram exiting gracefully after signaled")
-    global drv
-    if drv is not None:
-        print("\ndrv stoping...")
-        drv.stop()
-        drv = None
+    global _drv
+    if _drv is not None:
+        print("\n_drv stoping...")
+        _drv.stop()
+        _drv = None
     sys.exit(0)
 
 
@@ -33,7 +35,6 @@ import tennis_time as tt
 import bet_coefs
 import dba
 import oncourt_players
-import common_wdriver
 import matchstat
 import ratings
 import decided_set
@@ -47,7 +48,7 @@ from live import (
     skip_levels_work,
 )
 import pre_live_dir
-import after_tie_perf_stat
+from stat_cont import WinLoss
 from report_line import SizedValue
 import atfirst_after
 
@@ -56,12 +57,11 @@ try:
 except ImportError:
     automate2 = None
 
-DEBUG_MODE = False
-DEBUG_MATCH_NAME = ""  # sample: "Samsonova L. - Konjuh A."
+_DEBUG_MATCH_NAME = ""  # sample: "Samsonova L. - Konjuh A."
 
 
 # (sex, tour_name) -> (tour_id, level, surface)
-tourinfo_cache = defaultdict(lambda: None)
+_tourinfo_cache = defaultdict(lambda: None)
 
 
 class Script(object):
@@ -88,6 +88,9 @@ class OncourtUpdateScript(Script):
 
 class MatchDataScript(Script):
     def __init__(self, wait_timeout, prelive_threshold):
+        """ prelive_threshold на сколько секунд от настоящего момента
+            смотрим в будущее для отбора матчей, которые скоро начнуться.
+            wait_timeout на сколько засыпаем после очередной работы """
         super(MatchDataScript, self).__init__(stopwatch.OverTimer(wait_timeout))
         self.prelive_threshold = prelive_threshold  # in seconds
         self.work_count = 0
@@ -103,7 +106,7 @@ class MatchDataScript(Script):
                 return True  # at start we want work possibly start-suspended matches
 
     def is_match_towork(self, match):
-        if DEBUG_MODE and match.name == DEBUG_MATCH_NAME:
+        if match.name == _DEBUG_MATCH_NAME:
             return True
         pre_live_name = match.pre_live_name()
         pre_live_dir.prepare_dir("matches")
@@ -122,28 +125,28 @@ class MatchDataScript(Script):
         def prep_simple_features():
             for feat in match.features:
                 if isinstance(feat, feature.RigidFeature):
-                    if feat is not None and isinstance(feat.value, SizedValue):
+                    if isinstance(feat.value, SizedValue):
                         dct[feat.name] = (feat.value.value, feat.value.size)
                     else:
                         dct[feat.name] = feat.value
 
-        def prep_plr_sv_feature(name, prefix=""):
-            fst_name = prefix + "fst_" + name
-            snd_name = prefix + "snd_" + name
+        def prep_plr_sv_feature(name):
+            fst_name = f"fst_{name}"
+            snd_name = f"snd_{name}"
             fst_feat = co.find_first(match.features, lambda f: f.name == fst_name)
             snd_feat = co.find_first(match.features, lambda f: f.name == snd_name)
             if (
                 fst_feat is not None
                 and snd_feat is not None
-                and isinstance(fst_feat.value, SizedValue)
-                and isinstance(snd_feat.value, SizedValue)
+                and isinstance(fst_feat.value, (SizedValue, WinLoss))
+                and isinstance(snd_feat.value, (SizedValue, WinLoss))
             ):
                 dct[fst_name] = (fst_feat.value.value, fst_feat.value.size)
                 dct[snd_name] = (snd_feat.value.value, snd_feat.value.size)
 
-        def prep_plr_feature(name, prefix=""):
-            fst_name = prefix + "fst_" + name
-            snd_name = prefix + "snd_" + name
+        def prep_plr_feature(name):
+            fst_name = f"fst_{name}"
+            snd_name = f"snd_{name}"
             fst_feat = co.find_first(match.features, lambda f: f.name == fst_name)
             snd_feat = co.find_first(match.features, lambda f: f.name == snd_name)
             if fst_feat is not None and snd_feat is not None:
@@ -191,45 +194,10 @@ class MatchDataScript(Script):
         if match.rnd is not None:
             dct["rnd"] = str(match.rnd)
         if match.features:
-            prep_plr_feature("fatigue")
-            prep_plr_feature("plr_tour_adapt")
-            prep_plr_feature("prevyear_tour_rnd")
-            prep_plr_feature("set2win_after_set1loss")
-            prep_plr_feature("set2win_after_set1win")
-            prep_plr_feature("decided_begin_sh-3")
-            prep_plr_feature("decided_keep_sh-3")
-            prep_plr_feature("decided_recovery_sh-3")
-            prep_plr_feature("trail")
-            prep_plr_feature("choke")
             prep_plr_feature("absence")
             prep_plr_feature("retired")
-            prep_plr_feature(after_tie_perf_stat.ASPECT_UNDER)
-            prep_plr_feature(after_tie_perf_stat.ASPECT_PRESS)
-            # prep_plr_feature('onset_srv', prefix='sa_')
-            # prep_plr_feature('onset_rcv', prefix='sa_')
-            # prep_plr_feature('setend_srv', prefix='sa_')
-            # prep_plr_feature('setend_rcv', prefix='sa_')
-            prep_plr_sv_feature("s1_tie_ratio")
-            prep_plr_sv_feature("sd_tie_ratio")
-            prep_plr_sv_feature("s2_tie_ratio_press")
-            prep_plr_sv_feature("s2_tie_ratio_under")
+            # other features temporary removed
 
-        dct["decset_ratio_dif"] = match.decset_ratio_dif
-        dct["decset_bonus_dif"] = match.decset_bonus_dif
-        dct["h2h_direct"] = match.h2h_direct
-        if match.offer and match.offer.win_coefs:
-            dct["fst_win_coef"] = match.offer.win_coefs.first_coef
-            dct["snd_win_coef"] = match.offer.win_coefs.second_coef
-        dct["fst_draw_status"] = (
-            match.first_draw_status if match.first_draw_status is not None else ""
-        )
-        dct["snd_draw_status"] = (
-            match.second_draw_status if match.second_draw_status is not None else ""
-        )
-        if match.fst_last_res:
-            dct["fst_last_res"] = match.fst_last_res.week_results_list
-        if match.snd_last_res:
-            dct["snd_last_res"] = match.snd_last_res.week_results_list
         return dct
 
     def check_dict(self, dct, match):
@@ -249,16 +217,17 @@ class MatchDataScript(Script):
         self.check_dict(dct, match)
 
     def work(self):
-        drv.live_page_refresh()
+        tbeg = time.perf_counter()
+        _drv.live_page_refresh()
         events = get_events(
-            drv.page(),
+            _drv.page(),
             skip_levels=skip_levels_work(),
             match_status=MatchStatus.scheduled,
         )
         for event in events:
             if self.is_event_towork(event):
-                if (event.sex, event.tour_name) in tourinfo_cache:
-                    tour_id, level, surface = tourinfo_cache[
+                if (event.sex, event.tour_name) in _tourinfo_cache:
+                    tour_id, level, surface = _tourinfo_cache[
                         (event.sex, event.tour_name)
                     ]
                     event.tour_id = tour_id
@@ -276,6 +245,7 @@ class MatchDataScript(Script):
                                 # weeked_tours may updated:
                                 match.fill_details_tried = False
                                 match.fill_details(tour)
+                                log_preparing_match(match, comment='YEScached')
                                 self.prepare(match)
                 else:
                     # two next statements makes more long algo
@@ -293,18 +263,27 @@ class MatchDataScript(Script):
                                     # weeked tours may updated
                                     match.fill_details_tried = False
                                     match.fill_details(tour)
+                                    log_preparing_match(match, comment='NOTcached')
                                     self.prepare(match)
                             if event.tour_id is not None:
-                                tourinfo_cache[(event.sex, event.tour_name)] = (
+                                _tourinfo_cache[(event.sex, event.tour_name)] = (
                                     event.tour_id,
                                     event.level,
                                     event.surface,
                                 )
         self.work_count += 1
-        log.info("MatchDataScript work done")
+        tend = time.perf_counter()
+        log.info(f"MatchDataScript work done in {tend - tbeg:0.1f} seconds")
 
 
-def get_min_timer_script(scripts):
+def log_preparing_match(match: LiveMatch, comment: str):
+    log.info(
+        f"prep {match.datetime.hour}:{match.datetime.minute} {match.name}"
+        f" {match.tour_name} {comment} {match.sex} {match.level} {match.surface}"
+    )
+
+
+def get_min_timer_script(scripts) -> Script:
     minimum = 1e10
     script_selected = None
     for script in scripts:
@@ -316,15 +295,15 @@ def get_min_timer_script(scripts):
 
 
 def main(scripts):
-    global drv
-    drv = common_wdriver.wdriver(company_name="FS", headless=True)
-    drv.start()
-    drv.go_live_page()
-    initialize_players_cache(drv.page())
+    global _drv
+    _drv = wdriver(company_name="FS", headless=True)
+    _drv.start()
+    _drv.go_live_page()
+    initialize_players_cache(_drv.page())
 
     atfirst_after.initialize_day(
         get_events(
-            drv.page(),
+            _drv.page(),
             skip_levels=skip_levels_work(),
             match_status=MatchStatus.scheduled,
         ),
@@ -345,14 +324,13 @@ def main(scripts):
         except co.TennisError as err:
             log.error(str(err), exc_info=True)
             break
-    drv.stop()
-    drv = None
+    _drv.stop()
+    _drv = None
 
 
 def make_scripts():
     result = [
-        MatchDataScript(wait_timeout=60 * 15, prelive_threshold=60 * 25),
-        # MatchDataScript(wait_timeout=60 * 15, prelive_threshold=3600 + 60 * 7),
+        MatchDataScript(wait_timeout=60 * 12, prelive_threshold=60 * 30),
     ]
     if args.oncourt and automate2 is not None:
         result.append(OncourtUpdateScript(wait_timeout=2000))
@@ -419,15 +397,6 @@ if __name__ == "__main__":
     ratings.Rating.register_rtg_name("elo")
     ratings.Rating.register_rtg_name("elo_alt")
     mon_date = tt.past_monday_date(datetime.date.today())
-    # tie_stat.initialize_results(sex=None,
-    #                             min_date=mon_date - datetime.timedelta(days=365 * 3),
-    #                             max_date=None)
-    # impgames_stat.initialize_results(
-    #     'wta', min_date=datetime.date.today() - datetime.timedelta(
-    #         days=impgames_stat.HISTORY_DAYS))
-    # impgames_stat.initialize_results(
-    #     'atp', min_date=datetime.date.today() - datetime.timedelta(
-    #         days=impgames_stat.HISTORY_DAYS))
     initialize()
     live_initialize()
     if args.cleardir:

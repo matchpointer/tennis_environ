@@ -1,6 +1,8 @@
-# -*- coding: utf-8 -*-
+r"""
+module gives possibility (make_events) for parsing live matches at flashscore site
+including points score in game (for example 40:30)
+"""
 import datetime
-import copy
 import time
 from collections import defaultdict
 from typing import Optional, Tuple, List
@@ -14,7 +16,7 @@ import log
 import oncourt_players
 from tennis import Surface, Level
 import tennis_time as tt
-import tennis_parse
+import player_name_ident
 import weeked_tours
 import score as sc
 from live import (
@@ -22,10 +24,11 @@ from live import (
     MatchStatus,
     MatchSubStatus,
     LiveMatch,
-    TourInfo,
     LiveTourEvent,
     skip_levels_default,
+    skip_levels_work,
 )
+from live_tourinfo import TourInfo, TourInfoCache
 from oncourt_db import MAX_WTA_FUTURE_MONEY
 from geo import city_in_europe
 from tour_name import TourName
@@ -34,7 +37,8 @@ SKIP_SEX = None
 SKIP_FINAL_RESULT_ONLY = True  # events marked as FRO are without point by point
 
 
-def make_events(webpage, skip_levels, match_status=MatchStatus.live, target_date=None
+def make_events(
+    webpage, skip_levels, match_status=MatchStatus.live, target_date=None
 ) -> List[LiveTourEvent]:
     """Return events list. skip_levels is dict: sex -> levels"""
     parser = lxml.html.HTMLParser(encoding="utf8")
@@ -53,28 +57,13 @@ def _make_events_impl(cur_date, tree, match_status, skip_levels) -> List[LiveTou
     )
     is_events = bool(all_divs)
     start_idx = 0
-    today_date = datetime.date.today()
     while is_events:
         try:
             tennis_event = _make_live_tour_event(
                 all_divs[start_idx:], match_status, skip_levels, cur_date, start_idx
             )
-            if tennis_event and not tennis_event.doubles:
-                if "fed-cup" in str(tennis_event.tour_name) or (
-                    ("davis-cup" in str(tennis_event.tour_name))
-                    and not (
-                        today_date >= datetime.date(2019, 11, 1)
-                        and tennis_event.level == "teamworld"
-                    )
-                ):
-                    # this was ok, BUT since 2019.11 atp has new format (Finals), where
-                    # there are groups stage (each group has unique ID in oncourt db)
-                    # flashscore.com does not display group name info.
-                    # So now problem to dispatch group matches and get correct ID.
-                    for evt in _split_team_event_by_countries(tennis_event):
-                        tour_events.append(evt)
-                else:
-                    tour_events.append(tennis_event)
+            if tennis_event:
+                tour_events.append(tennis_event)
         except LiveEventToskipError:
             pass
         except co.TennisError as err:
@@ -89,54 +78,8 @@ def _make_events_impl(cur_date, tree, match_status, skip_levels) -> List[LiveTou
     return [t for t in tour_events if t.matches]
 
 
-def _split_team_event_by_countries(team_event):
-    """motiv: Fed/Davis Cup flashcore event contains matches where surfaces differs.
-    Also oncourt tour id is unique (mostly) for pair (country1, country2)"""
-
-    def _make_event(coupair, matches):
-        live_event = LiveTourEvent()
-        live_event.tour_info = copy.deepcopy(team_event.tour_info)
-        live_event.tour_info.tour_name.add_part(coupair[0])
-        live_event.tour_info.tour_name.add_part(coupair[1])
-        for mch in matches:
-            mch.live_event = live_event  # new owner
-            live_event.matches.append(mch)
-        find_surface(live_event)
-        return live_event
-
-    def find_surface(live_event):
-        if live_event.surface is None:
-            surface = sex_tourname_surf_map.get(
-                (live_event.sex, live_event.tour_name, None)
-            )
-            if surface is not None:
-                live_event.tour_info.surface = surface
-
-    coupair_to_matches = defaultdict(list)
-    for m in team_event.matches:
-        if (
-            m.first_player
-            and m.first_player.cou
-            and m.second_player
-            and m.second_player.cou
-        ):
-            coupair_to_matches[(m.first_player.cou, m.second_player.cou)].append(m)
-
-    return [
-        _make_event(coupair, matches) for coupair, matches in coupair_to_matches.items()
-    ]
-
-
 def _make_live_tour_event(elements, match_status, skip_levels, current_date, start_idx):
-    tour_info = _make_tourinfo(elements[0], start_idx)
-    if (
-        tour_info.doubles
-        or tour_info.level in skip_levels[tour_info.sex]
-        or tour_info.exhibition
-        or (tour_info.tour_name and "Next Gen Finals" in tour_info.tour_name)
-    ):
-        raise LiveEventToskipError()
-
+    tour_info = _make_tourinfo(elements[0], start_idx, skip_levels)
     live_event = LiveTourEvent()
     live_event.tour_info = tour_info
     for elem in elements[1:]:
@@ -207,10 +150,11 @@ def _make_live_match(element, live_event, current_date, match_status: MatchStatu
             txt = co.to_ascii(plr_el.text).strip()
             bracket_idx = txt.index("(")
             name = txt[0:bracket_idx].strip()
-            cou = txt[bracket_idx + 1 : bracket_idx + 4].strip().upper()
+            cou = txt[bracket_idx + 1: bracket_idx + 4].strip().upper()
             return name, cou
         except ValueError:
-            raise LiveEventToskipError()  # maybe it is team's result div without '(cou)'
+            # maybe it is team's result div without '(cou)':
+            tourinfo_cache.edit_skip(live_event.tour_info)
 
     def is_left_service():
         if (
@@ -261,7 +205,7 @@ def _make_live_match(element, live_event, current_date, match_status: MatchStatu
 
     cur_st, cur_sub_st = current_status()
     if SKIP_FINAL_RESULT_ONLY and is_final_result_only():
-        raise LiveEventToskipError()
+        tourinfo_cache.edit_skip(live_event.tour_info)
     if cur_st != match_status:
         return None
     obj = LiveMatch(live_event)
@@ -283,36 +227,35 @@ def _make_live_match(element, live_event, current_date, match_status: MatchStatu
 
 wta_today_players_cache = defaultdict(lambda: None)  # (disp_name, cou) -> Player
 atp_today_players_cache = defaultdict(lambda: None)
+init_players_cache_mode = False
 
-deep_find_player = False
-
-init_cache_mode = False
+deep_find_player_mode = False
 
 
 def initialize_players_cache(webpage, match_status=MatchStatus.scheduled):
-    global deep_find_player, init_cache_mode
-    mem_deep_find_player = deep_find_player
-    deep_find_player = True
-    init_cache_mode = True
+    global deep_find_player_mode, init_players_cache_mode
+    mem_deep_find_player_mode = deep_find_player_mode
+    deep_find_player_mode = True
+    init_players_cache_mode = True
     try:
         make_events(
             webpage,
-            skip_levels=skip_levels_default(),
+            skip_levels=skip_levels_work(),
             match_status=match_status,
             target_date=datetime.date.today(),
         )
     finally:
-        deep_find_player = mem_deep_find_player
-        init_cache_mode = False
+        deep_find_player_mode = mem_deep_find_player_mode
+        init_players_cache_mode = False
 
 
 def _find_player(sex: str, disp_name: str, cou: str):
     cache = wta_today_players_cache if sex == "wta" else atp_today_players_cache
     if cache:
         return cache[(disp_name, cou)]
-    if deep_find_player:
-        plr = tennis_parse.identify_player("FS", sex, disp_name, cou)
-        if init_cache_mode:
+    if deep_find_player_mode:
+        plr = player_name_ident.identify_player("FS", sex, disp_name, cou)
+        if init_players_cache_mode:
             if plr is not None:
                 cache[(disp_name, cou)] = plr
             else:
@@ -325,7 +268,22 @@ def _find_player(sex: str, disp_name: str, cou: str):
         )
 
 
-def _make_tourinfo(element, start_idx):
+def _make_tourinfo(element, start_idx, skip_levels):
+    def is_skip_key():
+        return (
+            "DOUBLES" in evt_title_text
+            or "EXHIBITION" in evt_title_text
+            or "Next Gen Finals" in evt_title_text
+            or "Laver Cup" in evt_title_text
+        )
+
+    def is_skip_obj(tourinfo_fs: TourInfoFlashscore):
+        return (
+            tourinfo_fs.level in skip_levels[tourinfo_fs.sex]
+            or tourinfo_fs.sex == SKIP_SEX
+            or tourinfo_fs.teams
+        )
+
     def split_before_after_text(text, part):
         if part in text:
             before_including = co.strip_after_find(text, part)
@@ -333,8 +291,6 @@ def _make_tourinfo(element, start_idx):
             return before_including, after_not_including
 
     def split_sex_doubles_text(text):
-        if "DOUBLES" in text or "EXHIBITION" in text or "Laver Cup" in text:
-            raise LiveEventToskipError("not interested event")
         # now ':' is not in text_content() and we need split text by key words:
         result = split_before_after_text(text, "SINGLES")
         if result is None:
@@ -348,35 +304,40 @@ def _make_tourinfo(element, start_idx):
             "class != event__header got class: '{}' start_idx {}\n{}".format(
                 element.get("class"),
                 start_idx,
-                etree.tostring(element, encoding="utf8"),
-            )
+                etree.tostring(element, encoding="utf8"))
         )
         raise Exception(
             "class != event__header got class: '{}' start_idx {}".format(
-                element.get("class"), start_idx
-            )
-        )
+                element.get("class"), start_idx))
 
     evt_title_el = co.find_first_xpath(
-        element, "child::div[contains(@class,'event__title ')]"
-    )
+        element, "child::div[contains(@class,'event__title ')]")
     if evt_title_el is None:
         raise co.TennisParseError(
             "not parsed sex_doubles el FS TourInfo from\n{}".format(
-                etree.tostring(element, encoding="utf8")
-            )
-        )
+                etree.tostring(element, encoding="utf8")))
     evt_title_text = evt_title_el.text_content().strip()
     if not evt_title_text:
         raise co.TennisParseError("empty sex_doubles txt FS TourInfo")
+
+    if is_skip_key():
+        raise LiveEventToskipError()
+    obj = tourinfo_cache.get(evt_title_text)
+    if obj is not None:
+        return obj
+
     evt_title_parts = split_sex_doubles_text(evt_title_text)
     if evt_title_parts is None:
         raise co.TennisParseError(
             "fail split sex_doubles: '{}'\n{}".format(
-                evt_title_text, etree.tostring(element, encoding="utf8")
-            )
+                evt_title_text, etree.tostring(element, encoding="utf8"))
         )
-    return TourInfoFlashscore(evt_title_parts[0], evt_title_parts[1])
+    obj = TourInfoFlashscore(evt_title_parts[0], evt_title_parts[1])
+    if is_skip_obj(obj):
+        tourinfo_cache.put_skip(evt_title_text)
+    else:
+        tourinfo_cache.put(evt_title_text, obj)
+        return obj
 
 
 # sample: "W15 Antalya (Turkey)"
@@ -402,7 +363,7 @@ def itf_wta_money_tourname(text):
 
 def itf_atp_money_tourname(text):
     """:returns (money_K, tourname) or None if fail.
-    Details started with open bracket (country) are ignored"""
+       Details started with open bracket (country) are ignored"""
     m_money_tourname = ATP_MONEY_TOURNAME_RE.match(text)
     if m_money_tourname:
         return (
@@ -425,16 +386,14 @@ def split_ontwo_enclosed(text: str, delim_op: str, delim_cl: str):
 
 class TourInfoFlashscore(TourInfo):
     def __init__(self, part_one, part_two):
-        super(TourInfoFlashscore, self).__init__()
+        super().__init__()
 
         body_part, surf_part = co.split_ontwo(part_two, delim=", ")
         body_part, qual_part = co.split_ontwo(body_part, delim=" - ")
         body_part, country_part = split_ontwo_enclosed(
-            body_part, delim_op="(", delim_cl=")"
-        )
+            body_part, delim_op="(", delim_cl=")")
         body_part, desc_part = split_ontwo_enclosed(
-            body_part, delim_op="(", delim_cl=")"
-        )
+            body_part, delim_op="(", delim_cl=")")
         number = None
         if body_part and body_part[-1].isdigit() and body_part[-2] == " ":
             number = int(body_part[-1])
@@ -446,14 +405,10 @@ class TourInfoFlashscore(TourInfo):
             or "ATP Cup" in body_part
             or "Billie Jean King Cup" in body_part
         )
-        if self.teams and "World Group" not in qual_part and "ATP Cup" not in body_part:
-            raise LiveEventToskipError("it is not top leage of Davis Cup")
         if "WOMEN" in part_one or "WTA" in part_one or "GIRLS" in part_one:
             self.sex = "wta"
         else:
             self.sex = "atp"
-        if self.sex == SKIP_SEX:
-            raise LiveEventToskipError()
         self.doubles = "DOUBLES" in body_part
         is_grand_slam = (
             "JUNIORS" not in body_part
@@ -521,16 +476,6 @@ class TourInfoFlashscore(TourInfo):
             money,
         )
 
-    def __eq__(self, other):
-        return (
-            self.tour_name == other.tour_name
-            and self.sex == other.sex
-            and self.teams == other.teams
-            and self.qualification == other.qualification
-            and self.doubles == other.doubles
-            and self.itf == other.itf
-        )
-
     def __init_level(self, is_grand_slam, part_one, qual_part, money):
         if is_grand_slam:
             result = Level("gs")
@@ -554,6 +499,9 @@ class TourInfoFlashscore(TourInfo):
         else:
             result = Level("main")
         return result
+
+
+tourinfo_cache = TourInfoCache(skip_exc_cls=LiveEventToskipError)
 
 
 def _make_current_date(root_elem):
@@ -608,8 +556,7 @@ def goto_date(fsdrv, days_ago, start_date, wait_sec=5):
     if cur_date != target_date:
         raise co.TennisError(
             "target_date {} != cur_date {} days_ago: {}".format(
-                target_date, cur_date, days_ago
-            )
+                target_date, cur_date, days_ago)
         )
     return cur_date
 
@@ -632,8 +579,7 @@ def initialize(prev_week=False):
             wta_chal_tour_surf.add((tour.name, tour.surface))
             log.info(
                 "FS::init prev_week {} wta_chal {} {}".format(
-                    prev_week, tour.name, tour.surface
-                )
+                    prev_week, tour.name, tour.surface)
             )
 
 

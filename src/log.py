@@ -104,6 +104,7 @@ def _check_levels(levels):
 
 def _min_level_code(levels):
     level_codes = [
-        ((logging.CRITICAL + 1) if level is None else _LEVELS[level]) for level in levels
+        ((logging.CRITICAL + 1) if level is None else _LEVELS[level])
+        for level in levels
     ]
     return min(level_codes)

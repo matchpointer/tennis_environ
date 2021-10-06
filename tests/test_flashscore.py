@@ -193,3 +193,19 @@ if __name__ == "__main__":
 
     unittest.main()
     dba.close_connect()
+
+
+@unittest.skip(reason='not actual')
+class TourInfoFlashscoreTeamsTest(unittest.TestCase):
+    def test_atp_cup(self):
+        part_one = "ATP - TEAMS"
+        part_two = "ATP Cup - World Group (World) - Qualification"
+        obj = TourInfoFlashscore(part_one, part_two)
+        self.assertEqual("ATP Cup", str(obj.tour_name))
+
+    def test_init(self):
+        part_one = "WTA - SINGLES"
+        part_two = "Fed Cup - World Group (World) - Qualification"
+        obj = TourInfoFlashscore(part_one, part_two)
+        self.assertEqual("Fed Cup", str(obj.tour_name))
+

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ пополнение базы детальных счетов (DetailedScore) c сайта flashscore.com
 """
 import sys
@@ -177,7 +176,7 @@ def fetch_main(mindaysago, maxdaysago, sex=None):
         in_monday = tt.past_monday_date(in_date)
         return in_monday <= cur_monday
 
-    flashscore.deep_find_player = True
+    flashscore.deep_find_player_mode = True
     fsdrv = fetch_initialize(sex=sex, yearsnum=1.5)
     start_datetime = datetime.datetime.now()
     log.info(

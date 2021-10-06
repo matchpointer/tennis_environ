@@ -11,15 +11,20 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+import matplotlib.pyplot as plt
+
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from catboost import CatBoostClassifier
 
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import RFE
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
+    average_precision_score,
+    precision_recall_curve,
     f1_score,
     recall_score,
 )
@@ -427,6 +432,27 @@ key_main_clr = LevSurf(
     stratify_names=["surface", "rnd"],
 )
 
+key_main_clr_rtg350_250 = LevSurf(
+    name="main_clr_rtg350_250",
+    levels=["main", "gs", "masters"],
+    surfaces=None,
+    drop_cond=lambda d: (
+        (d["level_text"].isin(["qual", "chal", "team", "teamworld", "future"]))
+        |
+        # (d['rnd_text'].isin(q_rounds)) |  # here strong qual in masters
+        # (d['rnd_text'] == 'Robin') |  # here strong Robin in masters (endeyar Finals)
+        (d["rnd_text"] == "Rubber")
+        | (d["fst_std_rank"] > 350)
+        | (d["snd_std_rank"] > 350)
+        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 250)
+    ),
+    skip_match_cond=lambda m: (
+        m.level in ["qual", "chal", "team", "teamworld", "future"]
+        or (m.rnd is not None and m.rnd.rubber())
+    ),
+    stratify_names=["surface", "rnd"],
+)
+
 key_main_clr_rtg300_200 = LevSurf(
     name="main_clr_rtg300_200",
     levels=["main", "gs", "masters"],
@@ -503,7 +529,6 @@ key_main_hard = LevSurf(
     ),
     stratify_names=["rnd"],
 )
-
 key_all_hard_rtg250_180 = LevSurf(
     name="all_hard_rtg250_180",
     levels=["main", "gs", "masters", "chal"],
@@ -542,6 +567,7 @@ key_main_qual_clr = LevSurf(
 
 
 ProfitRatios = namedtuple("ProfitRatios", "pos_ratio neg_ratio")
+PosNeg = namedtuple("PosNeg", "pos neg")
 
 
 class Variant:
@@ -552,8 +578,7 @@ class Variant:
         key: LevSurf,
         cls,
         clf_pars,
-        min_proba: float,
-        min_neg_proba: float,
+        min_probas: PosNeg,
         profit_ratios: Tuple[float, float],
         feature_names: FeatureNames,
         weight_mode=WeightMode.NO,
@@ -566,8 +591,7 @@ class Variant:
         self.key = key
         self.cls = cls
         self.clf_pars = clf_pars  # dict: param_name -> param_value
-        self.min_proba = min_proba  # for positive class
-        self.min_neg_proba = min_neg_proba  # for negative class
+        self.min_probas = min_probas
         self.profit_ratios = ProfitRatios(
             pos_ratio=profit_ratios[0], neg_ratio=profit_ratios[1]
         )
@@ -585,7 +609,7 @@ class Variant:
 
     def __str__(self):
         return (
-            f"{self.name} {self.clf_pars} " f"P:{self.min_proba} N:{self.min_neg_proba}"
+            f"{self.name} {self.clf_pars} " f"P:{self.min_probas}"
         )
 
     def is_cb_native(self):
@@ -603,9 +627,6 @@ class Variant:
 
     def get_profit_ratios(self):
         return self.profit_ratios
-
-    def get_min_neg_proba(self):
-        return self.min_neg_proba
 
     def set_random_state(self, random_state):
         if self.is_cb_native():
@@ -978,6 +999,166 @@ def substract_df(df, df_substr, inplace=True):
         return df.drop(del_idxes, inplace=False)
 
 
+class PersistDataSet(object):
+    def __init__(
+        self, key, suffix, size, etalon_feat_names, label_name, subname, is_w=False
+    ):
+        self.key = key
+        self.suffix = suffix  # samples: 'total_h2h', 'total'
+        self.subname = subname  # 'test' or 'eval'
+        self.size = size
+        self.etalon_feat_names = etalon_feat_names
+        self.label_name = label_name
+
+        self.feat_names = None
+        # numpy arrays:
+        self.X = None
+        self.y = None
+        self.w = None
+        self.is_w = is_w
+        self.date = None
+        self.fst_pid = None
+        self.snd_pid = None
+
+    def contains_sample(self, date, fst_pid, snd_pid):
+        if (
+            self.date is not None
+            and self.fst_pid is not None
+            and self.snd_pid is not None
+        ):
+            return (date, fst_pid, snd_pid) in list(
+                zip(self.date, self.fst_pid, self.snd_pid)
+            )
+
+    def save(self):
+        dirname = persist_dirname(
+            model_name=self.suffix, key=self.key, subname=self.subname
+        )
+        np.save(dirname + "/X.npy", self.X)
+        np.save(dirname + "/y.npy", self.y)
+        np.save(dirname + "/date.npy", self.date)
+        np.save(dirname + "/fst_pid.npy", self.fst_pid)
+        np.save(dirname + "/snd_pid.npy", self.snd_pid)
+        np.save(dirname + "/feat_names.npy", self.feat_names)
+        if self.is_w:
+            np.save(dirname + "/w.npy", self.w)
+
+    def load(self):
+        try:
+            dirname = persist_dirname(
+                model_name=self.suffix, key=self.key, subname=self.subname
+            )
+            self.X = np.load(dirname + "/X.npy", allow_pickle=True)
+            self.y = np.load(dirname + "/y.npy", allow_pickle=True)
+            self.date = np.load(dirname + "/date.npy", allow_pickle=True)
+            self.fst_pid = np.load(dirname + "/fst_pid.npy", allow_pickle=True)
+            self.snd_pid = np.load(dirname + "/snd_pid.npy", allow_pickle=True)
+            self.feat_names = np.load(
+                dirname + "/feat_names.npy", allow_pickle=True
+            ).tolist()
+            if self.is_w:
+                self.w = np.load(dirname + "/w.npy", allow_pickle=True)
+
+            if self.feat_names != self.etalon_feat_names:
+                print(
+                    "npy {} load: differ loaded feat_names:\n{} {} {}".format(
+                        self.subname, self.key, self.suffix, self.feat_names
+                    )
+                )
+            return True
+        except (IOError, ValueError) as err:
+            print(
+                "load npy {} failed {} at {} {}".format(
+                    self.subname, err, self.key, self.suffix
+                )
+            )
+            return False
+
+    def removed_from(self, df):
+        """return dataframe filtered so that our self rows is removed"""
+        key_trips = list(zip(self.date, self.fst_pid, self.snd_pid))
+        remain_idxes = [
+            i
+            for i in df.index
+            if (df.loc[i, "date"], df.loc[i, "fst_pid"], df.loc[i, "snd_pid"])
+            not in key_trips
+        ]
+        return df.filter(items=remain_idxes, axis=0)
+
+    def removed_from_2(self, df):
+        """return dataframe filtered so that our self rows is removed"""
+        key_trips = list(zip(self.date, self.fst_pid, self.snd_pid))
+        inner_idxes = [
+            i
+            for i in df.index
+            if (df.loc[i, "date"], df.loc[i, "fst_pid"], df.loc[i, "snd_pid"])
+            in key_trips
+        ]
+        outer_idxes = [
+            i
+            for i in df.index
+            if (df.loc[i, "date"], df.loc[i, "fst_pid"], df.loc[i, "snd_pid"])
+            not in key_trips
+        ]
+        return df.filter(items=outer_idxes, axis=0), inner_idxes
+
+    def create(self, df, random_state=None):
+        X = df[self.etalon_feat_names].values
+        y = df[self.label_name].values
+        date = df["date"].values
+        fst_pid = df["fst_pid"].values
+        snd_pid = df["snd_pid"].values
+        if self.is_w:
+            w = df["weight"].values
+            (
+                _,
+                self.X,
+                _,
+                self.y,
+                _,
+                self.w,
+                _,
+                self.date,
+                _,
+                self.fst_pid,
+                _,
+                self.snd_pid,
+            ) = train_test_split(
+                X,
+                y,
+                w,
+                date,
+                fst_pid,
+                snd_pid,
+                stratify=y,
+                test_size=self.size,
+                random_state=random_state,
+            )
+        else:
+            (
+                _,
+                self.X,
+                _,
+                self.y,
+                _,
+                self.date,
+                _,
+                self.fst_pid,
+                _,
+                self.snd_pid,
+            ) = train_test_split(
+                X,
+                y,
+                date,
+                fst_pid,
+                snd_pid,
+                stratify=y,
+                test_size=self.size,
+                random_state=random_state,
+            )
+        self.feat_names = self.etalon_feat_names
+
+
 class DataSet(object):
     def __init__(self, X, y, w=None):
         self.X = X
@@ -1106,8 +1287,8 @@ class Result(object):
 def get_result(variant, clf, X_test, y_test):
     probs = clf.predict_proba(X_test)
     poswl, negwl = st.WinLoss(), st.WinLoss()
-    min_pos_proba = variant.min_proba
-    min_neg_proba = variant.get_min_neg_proba()
+    min_pos_proba = variant.min_probas.pos
+    min_neg_proba = variant.min_probas.neg
     for prob01, lab in zip(probs, y_test):
         if min_pos_proba is not None and prob01[1] >= min_pos_proba:
             poswl.hit(lab == 1)
@@ -1149,9 +1330,9 @@ def get_test_with_groupby(
         groupby_key = groupby_key_fun(groupby_name_val)
         positive_prob = proba[1]
         negative_prob = proba[0]
-        if positive_prob >= variant.min_proba:
+        if positive_prob >= variant.min_probas.pos:
             pos_dct[groupby_key].hit(y_test > 0.5)  # win if label 1
-        elif negative_prob >= variant.min_neg_proba:
+        elif negative_prob >= variant.min_probas.neg:
             neg_dct[groupby_key].hit(y_test < 0.5)  # win if label 0
     return result_list(pos_dct), result_list(neg_dct)
 
@@ -1233,6 +1414,46 @@ def out_corr_fnames_label(
         out(df[feat_names].corrwith(df[label_name]))
     df_minus_test = substract_df(df, df_test, inplace=False)
     out(df_minus_test[feat_names].corrwith(df_minus_test[label_name]))
+
+
+def plot_prec_recall_check(
+    variant, data, metric_name: str, pos_proba=None, random_seed: int = 0
+):
+    """from mueller"""
+    X_test, y_test = data.eval.X, data.eval.y
+    if X_test is None or y_test is None:
+        X_test, y_test = data.test.X, data.test.y
+        if X_test is None or y_test is None:
+            print("X_eval y_eval (or X_test, y_test) must be prepared")
+            return
+    clf = variant.make_clf_fit(
+        data=data, metric_name=metric_name, random_seed=random_seed
+    )
+    pred_pos_proba = clf.predict_proba(X_test)[:, 1]
+
+    avgprec = average_precision_score(y_test, pred_pos_proba)
+    print("Average precision: {:.3f}".format(avgprec))
+
+    precision_fr, recall_fr, thresholds_fr = precision_recall_curve(
+        y_test, pred_pos_proba, pos_label=1
+    )
+    plt.plot(precision_fr, recall_fr, label="fr")
+    if pos_proba is None:
+        pos_proba = variant.min_probas.pos
+    close_default_fr = np.argmin(np.abs(thresholds_fr - pos_proba))
+    plt.plot(
+        precision_fr[close_default_fr],
+        recall_fr[close_default_fr],
+        "^",
+        c="k",
+        markersize=10,
+        label="threshold {:.2f} fr".format(pos_proba),
+        fillstyle="none",
+        mew=2,
+    )
+    plt.xlabel("Precision")
+    plt.ylabel("Recall")
+    plt.legend(loc=2)
 
 
 if __name__ == "__main__":

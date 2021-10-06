@@ -1,4 +1,8 @@
-# -*- coding: utf-8 -*-
+"""
+утилиты для использования базы прогнозов классификаторов.
+Структура базы в predicts_dbsa.
+Простые сценарии из командной строки (см parse_command_line_args).
+"""
 import os
 import datetime
 from typing import Optional
@@ -6,6 +10,7 @@ from contextlib import closing
 from datetime import date, timedelta
 from collections import defaultdict
 from pprint import pprint
+import argparse
 
 import stopwatch
 import dba
@@ -251,67 +256,28 @@ def run_predictresult_flag():
     print(f"n_ok: {n_ok}, n_err: {n_err}")
 
 
-def _test_db_add_two_records():
-    def add_rec(*args, **kwargs):
-        r = predicts_dbsa.PredictRec(*args, **kwargs)
-        predicts_db_hnd.insert_obj(r)
+def parse_command_line_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run_tocsv", action="store_true")
+    parser.add_argument("--run_matchwinner", action="store_true")
+    parser.add_argument("--run_predictresult", action="store_true")
 
-    assert predicts_db_hnd is not None, 'not opened db'
+    parser.add_argument("--run_stat", action="store_true")
+    parser.add_argument("--sex", type=str, default="")
+    parser.add_argument("--casename", type=str, default="")
+    parser.add_argument("--minproba", type=float, default=None)
+    parser.add_argument("--maxproba", type=float, default=None)
 
-    add_rec(
-        date=datetime.date(2021, 7, 21),
-        sex='wta',
-        case_name='decided_00',
-        tour_name='Olympics',
-        level='main',
-        surface='Hard',
-        rnd='First',
-        back_id=123,
-        oppo_id=456,
-        predict_proba=0.7,
-        predict_result=-1,
-        comments='CLOSER',
-    )
-    add_rec(
-        date=datetime.date(2021, 7, 22),
-        sex='wta',
-        case_name='decided_00',
-        tour_name='Olympics',
-        level='main',
-        surface='Hard',
-        rnd='First',
-        back_id=234,
-        oppo_id=567,
-        predict_proba=0.75,
-        predict_result=-1,
-        comments='OPENER',
-    )
-    predicts_db_hnd.commit()
+    parser.add_argument("--rejected", dest="rejected", action="store_true")
+    parser.add_argument("--no-rejected", dest="rejected", action="store_false")
+
+    parser.add_argument("--opener", dest="opener", action="store_true")
+    parser.add_argument("--no-opener", dest="opener", action="store_false")
+    parser.set_defaults(opener=None, rejected=None)
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    import argparse
-
-    def parse_command_line_args():
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--run_tocsv", action="store_true")
-        parser.add_argument("--run_matchwinner", action="store_true")
-        parser.add_argument("--run_predictresult", action="store_true")
-
-        parser.add_argument("--run_stat", action="store_true")
-        parser.add_argument("--sex", type=str, default="")
-        parser.add_argument("--casename", type=str, default="")
-        parser.add_argument("--minproba", type=float, default=None)
-        parser.add_argument("--maxproba", type=float, default=None)
-
-        parser.add_argument("--rejected", dest="rejected", action="store_true")
-        parser.add_argument("--no-rejected", dest="rejected", action="store_false")
-
-        parser.add_argument("--opener", dest="opener", action="store_true")
-        parser.add_argument("--no-opener", dest="opener", action="store_false")
-        parser.set_defaults(opener=None, rejected=None)
-        return parser.parse_args()
-
     args = parse_command_line_args()
     if args.run_tocsv:
         initialize()

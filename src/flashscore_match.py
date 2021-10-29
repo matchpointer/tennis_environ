@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ work with flashscore point by point page(s); also work with match summary page.
     goes on LiveMatch.pointbypoint_href() for match point-by-point info.
     TODO parse player full name lowercased from tag a:

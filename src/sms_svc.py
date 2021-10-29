@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import urllib.request, urllib.error, urllib.parse
 from urllib.parse import quote
 from socket import error as SocketError

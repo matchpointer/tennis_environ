@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 TODO - flashscore.py when Davis Cup uses tour_name.add_part(part: str)
      - Fed Cup tours from oncourt db loaded with coma in tour_name (differ from atp)

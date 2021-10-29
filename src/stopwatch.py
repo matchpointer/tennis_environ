@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 stopwatch is a very simple Python module for measuring time.
 Great for finding out how long code takes to execute.

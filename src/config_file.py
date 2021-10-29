@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 from configparser import ConfigParser
 from typing import Optional

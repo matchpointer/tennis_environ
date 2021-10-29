@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ работа с selenium.webdriver
     chromedriver.exe 32bit from http://chromedriver.chromium.org/downloads
     geckodriver.exe 64bit (firefox) from https://github.com/mozilla/geckodriver/releases

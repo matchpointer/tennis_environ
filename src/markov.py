@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 r""" module for calculate importances and probabilities.
 """
 

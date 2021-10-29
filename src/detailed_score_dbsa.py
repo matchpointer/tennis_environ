@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ database of MatchRec with DetailedScore
 """
 import os

@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-import sys
+﻿import sys
 import unittest
 from collections import OrderedDict, namedtuple
 if sys.version_info >= (3, 9):

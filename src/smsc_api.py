@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-# SMSC.RU API (smsc.ru) версия 1.9 (01.02.2017)
+"""
+SMSC.RU API (smsc.ru) версия 1.9 (01.02.2017)
+"""
 
 from datetime import datetime
 import smtplib

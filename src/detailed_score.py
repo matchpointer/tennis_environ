@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ database of DetailedScore records
 """
 from collections import OrderedDict, namedtuple

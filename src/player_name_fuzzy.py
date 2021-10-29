@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from fuzzywuzzy import fuzz
 
 DEFAULT_MIN_RATIO = 63

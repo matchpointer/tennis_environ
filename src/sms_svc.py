@@ -1,16 +1,16 @@
-import urllib.request, urllib.error, urllib.parse
+import os
+import urllib.request
+import urllib.error
+import urllib.parse
 from urllib.parse import quote
 from socket import error as SocketError
 from collections import defaultdict, namedtuple
 import datetime
 import time
-import unittest
 
 import smsc_api
 from enum import IntEnum
 
-import common as co
-import log
 import cmds
 import cfg_dir
 import config_personal
@@ -24,7 +24,9 @@ class Providers(IntEnum):
 CURRENT_PROVIDER = Providers.sms_ru
 
 servicecodes = {
-    100: "Сообщение принято к отправке. На следующих строчках вы найдете идентификаторы отправленных сообщений в том же порядке, в котором вы указали номера, на которых совершалась отправка.",
+    100: ("Сообщение принято к отправке. На следующих строчках вы найдете идентификаторы"
+          " отправленных сообщений в том же порядке, в котором вы указали номера,"
+          " на которых совершалась отправка."),
     200: "Неправильный api_id",
     201: "Не хватает средств на лицевом счету",
     202: "Неправильно указан получатель",
@@ -32,7 +34,8 @@ servicecodes = {
     204: "Имя отправителя не согласовано с администрацией",
     205: "Сообщение слишком длинное (превышает 8 СМС)",
     206: "Будет превышен или уже превышен дневной лимит на отправку сообщений",
-    207: "На этот номер (или один из номеров) нельзя отправлять сообщения, либо указано более 100 номеров в списке получателей",
+    207: ("На этот номер (или один из номеров) нельзя отправлять сообщения,"
+          " либо указано более 100 номеров в списке получателей"),
     208: "Параметр time указан неправильно",
     209: "Вы добавили этот номер (или один из номеров) в стоп-лист",
     210: "Используется GET, где необходимо использовать POST",
@@ -40,7 +43,8 @@ servicecodes = {
     220: "Сервис временно недоступен, попробуйте чуть позже.",
     300: "Неправильный token (возможно истек срок действия, либо ваш IP изменился)",
     301: "Неправильный пароль, либо пользователь не найден",
-    302: "Пользователь авторизован, но аккаунт не подтвержден (пользователь не ввел код, присланный в регистрационной смс)",
+    302: ("Пользователь авторизован, но аккаунт не подтвержден"
+          " (пользователь не ввел код, присланный в регистрационной смс)"),
 }
 
 
@@ -88,11 +92,12 @@ def send_alert_messages(alert_messages):
         is_new_content = True
         msg_text = alert_msg.text
         send_sms(msg_text, to=config_personal.getval('sms', 'NUMBER1'))
-        time.sleep(0.3)
+        time.sleep(0.2)
 
     if is_new_content:
         # if sms is delaying then simple sound would be useful:
-        cmds.play_sound_file(cfg_dir.sounds_dir() + "/gong.wav")
+        sound_filename = os.path.join(cfg_dir.sounds_dir(), "gong.wav")
+        cmds.play_sound_file(sound_filename)
 
 
 def send_sms(text, to):
@@ -129,19 +134,3 @@ def send_sms_ru(text, to):
                 servicecodes[int(service_result[0])]
             )
         )
-
-
-class SmsTest(unittest.TestCase):
-    def test_send_me(self):
-        error_text = ""
-        try:
-            send_sms("simple smsru unit_test",
-                     to=config_personal.getval('sms', 'NUMBER1'))
-        except SMSError as err:
-            error_text = "{}".format(err)
-        self.assertFalse(error_text)
-
-
-if __name__ == "__main__":
-    log.initialize(co.logname(__file__, test=True), "debug", "debug")
-    unittest.main()

@@ -11,7 +11,8 @@ import dict_tools
 
 
 # dict: keyi -> Counter
-#               Counter: valuei -> count
+#               Counter: valuei -> int
+# если этот объект пуст, то режим работы 'сегодня' (читать из файла)
 dict_from_pid = defaultdict(lambda: defaultdict(Counter))
 
 
@@ -51,7 +52,7 @@ def find_report_line_in_file(filename, key):
     return None, None
 
 
-class SizedValue(object):
+class SizedValue:
     """
     представляет пару: value, size
     """
@@ -158,7 +159,7 @@ class ReportLine(SizedValue):
     )
 
     def __init__(self, key=None, value=None, size=0):
-        super(ReportLine, self).__init__(value, size)
+        super().__init__(value, size)
         self.key = key
 
     @staticmethod
@@ -193,6 +194,7 @@ class ReportLine(SizedValue):
         return not self.__eq__(other)
 
     def __add__(self, other):
+        """ very resemble at common.balanced_value """
         assert isinstance(other, ReportLine), "invalid other type: '{}'".format(
             type(other)
         )
@@ -325,10 +327,11 @@ class ReportLineTest(unittest.TestCase):
         self.assertEqual(r2, r2 - r0)
 
 
-class ReportLineList(object):
+class ReportLineList:
     def __init__(self, filename=None, struct_key=True, eval_key=False, items=None):
         """
-        Варианты создания: 1) filename, struct_key 2) посл-ть items
+        Варианты создания: 1) filename, struct_key
+                           2) посл-ть items
                            3) без аргументов - будет пустой.
         """
         if items:
@@ -412,7 +415,7 @@ class ReportLineList(object):
         result = ""
         for rpt_line in self._report_lines:
             result += fmt.format(
-                rpt_line.key, SizedValue(rpt_line.value, rpt_line.size)
+                str(rpt_line.key), str(SizedValue(rpt_line.value, rpt_line.size))
             )
         return result
 

@@ -2,7 +2,6 @@ import datetime
 from collections import Counter
 import copy
 import re
-import unittest
 
 import log
 import common as co
@@ -20,21 +19,6 @@ def tourname_number_split(tour_name):
 tourname_number_split.ENDSWITH_NUMBER_RE = re.compile(
     r"(?P<name>[a-zA-Z].*) (?P<number>\d\d?)$"
 )
-
-
-class TournameNumberSplitTest(unittest.TestCase):
-    def test_tourname_number_split(self):
-        name, num = tourname_number_split("Charleston 2")
-        self.assertEqual((name, num), ("Charleston", 2))
-
-        name, num = tourname_number_split("Charleston 10")
-        self.assertEqual((name, num), ("Charleston", 10))
-
-        name, num = tourname_number_split("Charleston 2a")
-        self.assertEqual((name, num), ("Charleston 2a", None))
-
-        name, num = tourname_number_split("Charleston2")
-        self.assertEqual((name, num), ("Charleston2", None))
 
 
 def log_events(events, head="", extended=True, flush=False):

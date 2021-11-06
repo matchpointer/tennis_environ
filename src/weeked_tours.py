@@ -1,8 +1,7 @@
 from collections import OrderedDict
 import datetime
-import unittest
 
-import common as co
+import cfg_dir
 import log
 import tournament as trmt
 import tennis_time as tt
@@ -190,88 +189,5 @@ def dump_tail_tours(sex, tail_weeks, filename=None):
         log.error("empty {} tailtours, tailweeks: {}".format(sex, tail_weeks))
     else:
         if filename is None:
-            filename = "./dump_tailtours_{}_{}.txt".format(sex, tail_weeks)
+            filename = f"{cfg_dir.log_dir()}/dump_tailtours_{sex}_{tail_weeks}.txt"
         trmt.tours_write_file(tailtours, filename)
-
-
-class ToursWriteTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        week_history = 4
-        cur_week_monday = tt.past_monday_date(datetime.date.today())
-        initialize_sex(
-            "wta",
-            min_date=cur_week_monday - datetime.timedelta(days=7 * week_history),
-            max_date=None,
-            with_today=True,
-            with_paired=True,
-            rnd_detailing=True,
-            with_ratings=True,
-            with_bets=True,
-        )
-        initialize_sex(
-            "atp",
-            min_date=cur_week_monday - datetime.timedelta(days=7 * week_history),
-            max_date=None,
-            with_today=True,
-            with_paired=True,
-            rnd_detailing=True,
-            with_ratings=True,
-            with_bets=True,
-        )
-
-    def test_tours_write(self):
-        trmt.tours_write_file(all_tours("wta"), filename="./test_wta_tours.txt")
-        trmt.tours_write_file(all_tours("atp"), filename="./test_atp_tours.txt")
-        n_weeks_ago = 4
-        dump_tail_tours(
-            "atp",
-            tail_weeks=n_weeks_ago,
-            filename=f"./test_atp_tail_tours_{n_weeks_ago}.txt",
-        )
-        dump_tail_tours(
-            "wta",
-            tail_weeks=n_weeks_ago,
-            filename=f"./test_wta_tail_tours_{n_weeks_ago}.txt",
-        )
-        self.assertTrue(1)
-
-
-# class MatchDateTest(unittest.TestCase):
-#    """ it may occur some piece of time """
-#    sex = 'atp'
-#
-#    @classmethod
-#    def setUpClass(cls):
-#        initialize_sex(cls.sex, min_date=datetime.date(2010,1,1),
-#                       max_date=datetime.date(2017,11,7), with_paired=True)
-#
-#    def test_matchstates(self):
-#        n_matches = 0
-#        n_matches_paired = 0
-#        n_matches_team = 0
-#        rndset = set()
-#        for year_weeknum in year_weeknum_iter(self.sex):
-#            for tour in tours(self.sex, year_weeknum):
-#                if tour.level in ('future', 'junior', 'chal'):
-#                    continue
-#                for rnd, matches in tour.matches_from_rnd.items():
-#                    if rnd.qualification():
-#                        continue
-#                    for m in matches:
-#                        if m.date is None:
-#                            n_matches += 1
-#                            rndset.add(rnd)
-#                            if m.paired():
-#                                n_matches_paired += 1
-#                            if tour.level in ('team', 'teamworld'):
-#                                n_matches_team += 1
-#        self.assertTrue(n_matches == 0)
-
-
-if __name__ == "__main__":
-    import dba
-
-    log.initialize(co.logname(__file__, test=True), "debug", "debug")
-    dba.open_connect()
-    unittest.main()

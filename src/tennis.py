@@ -236,14 +236,110 @@ def match_keys_combinations(level, surface, rnd):
     return co.keys_combinations(args)
 
 
+class Player:
+    def __init__(
+        self,
+        ident=None,
+        name=None,
+        cou=None,
+        birth_date=None,
+        lefty: Optional[bool] = None,
+        disp_names=None,
+    ):
+        self.ident = ident
+        self.name = co.to_ascii(name.strip()) if name is not None else None
+        self.cou = co.to_ascii(cou.strip()) if cou else None
+        self.rating = ratings.Rating()
+        self.birth_date = birth_date
+        self.lefty: Optional[bool] = lefty
+        self.disp_names = disp_names
+
+    def __repr__(self):
+        return "{} {} ({}){}".format(
+            self.name,
+            self.birth_date,
+            self.cou,
+            "" if not self.lefty else " lefty",
+        )
+
+    def __hash__(self):
+        return hash((self.ident, self.name, self.cou))
+
+    def __eq__(self, other):
+        if other is None:
+            return False
+        if self.ident is not None and other.ident is not None:
+            return self.ident == other.ident
+        else:
+            return self.name == other.name and self.cou == other.cou
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def unknown(self):
+        """unknown player used in db as player versus bye player"""
+        return self.ident == 3700
+
+    def disp_name(self, key, default=None):
+        if self.disp_names:
+            return self.disp_names.get(key, default)
+        return default
+
+    def age(self, ondate=None):
+        if self.birth_date is None:
+            return None
+        todate = ondate or datetime.date.today()
+        delta = todate - self.birth_date
+        return round(float(delta.days) / 365.0, 1)
+
+    def read_rating(self, sex, date=None, surfaces=("all",)):
+        if not self.ident:
+            return
+        if date is None:
+            rating_date = datetime.date.today()
+            if rating_date.isoweekday() == 1:
+                # в понед-к (по крайней мере утром) db еще не иммеет свежие рейтинги
+                rating_date = rating_date - datetime.timedelta(days=7)
+            else:
+                rating_date = tt.past_monday_date(rating_date)
+        else:
+            rating_date = date
+        self.rating.read(sex, self.ident, surfaces=surfaces, date=rating_date)
+
+    def read_pers_det(self, sex):
+        if self.ident is None:
+            return
+        player = co.find_first(
+            oncourt_players.players(sex), lambda p: p.ident == self.ident
+        )
+        if player is not None:
+            self.lefty = player.lefty
+
+    def read_birth_date(self, sex):
+        if not self.ident or self.birth_date is not None:
+            return
+        sql = """SELECT DATE_P
+                 FROM Players_{}
+                 WHERE ID_P = {};""".format(
+            sex, self.ident
+        )
+        with closing(dba.get_connect().cursor()) as cursor:
+            cursor.execute(sql)
+            row = cursor.fetchone()
+        if row:
+            birth = row[0]
+            if birth:
+                self.birth_date = birth.date() if birth is not None else None
+
+
 class Match:
     def __init__(
         self, first_player=None, second_player=None, score=None, rnd=None, date=None
     ):
-        self.first_player = first_player
-        self.second_player = second_player
-        self.score = score
-        self.rnd = rnd
+        self.first_player: Optional[Player] = first_player
+        self.second_player: Optional[Player] = second_player
+        self.score: Optional[sc.Score] = score
+        self.rnd: Optional[Round] = rnd
         self.date = date
         self.first_draw_status = (
             None  # after init try may be '' as mark of need not init
@@ -613,102 +709,6 @@ class Match:
                 return co.LEFT
             if self.second_draw_status == "bye" and self.first_draw_status != "bye":
                 return co.RIGHT
-
-
-class Player:
-    def __init__(
-        self,
-        ident=None,
-        name=None,
-        cou=None,
-        birth_date=None,
-        lefty: Optional[bool] = None,
-        disp_names=None,
-    ):
-        self.ident = ident
-        self.name = co.to_ascii(name.strip()) if name is not None else None
-        self.cou = co.to_ascii(cou.strip()) if cou else None
-        self.rating = ratings.Rating()
-        self.birth_date = birth_date
-        self.lefty: Optional[bool] = lefty
-        self.disp_names = disp_names
-
-    def __repr__(self):
-        return "{} {} ({}){}".format(
-            self.name,
-            self.birth_date,
-            self.cou,
-            "" if not self.lefty else " lefty",
-        )
-
-    def __hash__(self):
-        return hash((self.ident, self.name, self.cou))
-
-    def __eq__(self, other):
-        if other is None:
-            return False
-        if self.ident is not None and other.ident is not None:
-            return self.ident == other.ident
-        else:
-            return self.name == other.name and self.cou == other.cou
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def unknown(self):
-        """unknown player used in db as player versus bye player"""
-        return self.ident == 3700
-
-    def disp_name(self, key, default=None):
-        if self.disp_names:
-            return self.disp_names.get(key, default)
-        return default
-
-    def age(self, ondate=None):
-        if self.birth_date is None:
-            return None
-        todate = ondate or datetime.date.today()
-        delta = todate - self.birth_date
-        return round(float(delta.days) / 365.0, 1)
-
-    def read_rating(self, sex, date=None, surfaces=("all",)):
-        if not self.ident:
-            return
-        if date is None:
-            rating_date = datetime.date.today()
-            if rating_date.isoweekday() == 1:
-                # в понед-к (по крайней мере утром) db еще не иммеет свежие рейтинги
-                rating_date = rating_date - datetime.timedelta(days=7)
-            else:
-                rating_date = tt.past_monday_date(rating_date)
-        else:
-            rating_date = date
-        self.rating.read(sex, self.ident, surfaces=surfaces, date=rating_date)
-
-    def read_pers_det(self, sex):
-        if self.ident is None:
-            return
-        player = co.find_first(
-            oncourt_players.players(sex), lambda p: p.ident == self.ident
-        )
-        if player is not None:
-            self.lefty = player.lefty
-
-    def read_birth_date(self, sex):
-        if not self.ident or self.birth_date is not None:
-            return
-        sql = """SELECT DATE_P
-                 FROM Players_{}
-                 WHERE ID_P = {};""".format(
-            sex, self.ident
-        )
-        with closing(dba.get_connect().cursor()) as cursor:
-            cursor.execute(sql)
-            row = cursor.fetchone()
-        if row:
-            birth = row[0]
-            if birth:
-                self.birth_date = birth.date() if birth is not None else None
 
 
 class Surface:

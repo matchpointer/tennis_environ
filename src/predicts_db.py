@@ -1,8 +1,16 @@
 """
 утилиты для использования базы прогнозов классификаторов.
 Структура базы в predicts_dbsa.
-Простые сценарии из командной строки (см parse_command_line_args).
+Простые сценарии из командной строки  (--run) (см parse_command_line_args).
+
+Сейчас схема записи такова:
+    - классификаторы создают запись (write_predict)
+    - live_alerts добавляют (если есть факторы против) в нее rejected=1 с comments
+       (write_rejected)
+    - betfair_svc_impl добавляют в нее coefs
+       (write_bf_live_coef, write_bf_live_coef_matched)
 """
+from sys import exit
 import os
 import datetime
 from typing import Optional
@@ -10,7 +18,6 @@ from contextlib import closing
 from datetime import date, timedelta
 from collections import defaultdict
 from pprint import pprint
-import argparse
 
 import stopwatch
 import dba
@@ -44,6 +51,10 @@ def finalize():
         _commit(bytime=False)
 
 
+def cut_comments(comments):
+    return comments[:min(predicts_dbsa.MAX_COMMENTS_LEN, len(comments))]
+
+
 def write_rejected(match, case_name: str, back_side: Side, reason: str = ""):
     if predicts_db_hnd is None:
         return
@@ -57,7 +68,7 @@ def write_rejected(match, case_name: str, back_side: Side, reason: str = ""):
     if isinstance(rec, predicts_dbsa.PredictRec):
         rec.rejected = 1
         if reason:
-            rec.comments += (" " + reason)
+            rec.comments = cut_comments(rec.comments + " " + reason)
         _commit(bytime=False)
 
 
@@ -74,6 +85,23 @@ def write_bf_live_coef(date: datetime.date, sex: str, fst_id: int, snd_id: int,
         case_name, back_id=back_id, oppo_id=oppo_id)
     if isinstance(rec, predicts_dbsa.PredictRec):
         rec.bf_live_coef = bf_live_coef
+        _commit(bytime=False)
+
+
+def write_bf_live_coef_matched(date: datetime.date, sex: str, fst_id: int, snd_id: int,
+                               case_name: str, back_side: Side,
+                               bf_live_coef_matched: float):
+    if predicts_db_hnd is None:
+        return
+    if back_side.is_left():
+        back_id, oppo_id = fst_id, snd_id
+    else:
+        back_id, oppo_id = snd_id, fst_id
+    rec = predicts_dbsa.find_predict_rec_by(
+        predicts_db_hnd.session, sex, date,
+        case_name, back_id=back_id, oppo_id=oppo_id)
+    if isinstance(rec, predicts_dbsa.PredictRec):
+        rec.bf_live_coef_matched = bf_live_coef_matched
         _commit(bytime=False)
 
 
@@ -103,7 +131,7 @@ def write_predict(match, case_name: str, back_side: Side, proba: float,
         oppo_id=oppo_id,
         predict_proba=proba,
         predict_result=-1,
-        comments=comments,
+        comments=cut_comments(comments),
         back_name=back_name,
         oppo_name=oppo_name,
         book_start_chance=book_start_chance,
@@ -128,10 +156,29 @@ def run_stat():
     def get_rnd(rnd_db):
         return rnd_db.split(';')[0]
 
-    def get_back_coef():
+    def get_prof_coef_result():
+        nonlocal set2_loss_mched_cnt
         if rec.case_name == 'decided_00':
-            return max(1.44, round(1 / (rec.predict_proba - 0.05), 2))
+            return rec.bf_live_coef_matched, bool(rec.predict_result)
+        elif rec.case_name == 'secondset_00':
+            coef = 1 + (rec.bf_live_coef_matched - 1) * 0.4
+            iswin = bool(rec.predict_result)
+            if not iswin:
+                set2_loss_mched_cnt += 1
+                win_one_of = 4
+                if (set2_loss_mched_cnt % win_one_of) == 0:
+                    # assume win 1 of win_one_of by hedging, our plr looks ok
+                    iswin = True
+            return coef, iswin
+        return None, None
 
+    def do_profiter():
+        if rec.bf_live_coef_matched is not None:
+            prof_coef, prof_res = get_prof_coef_result()
+            if prof_coef is not None:
+                profiter.calculate_bet(coef=prof_coef, iswin=prof_res)
+
+    set2_loss_mched_cnt = 0
     wl = WinLoss()
     surf_wl_dct = defaultdict(WinLoss)
     rnd_wl_dct = defaultdict(WinLoss)
@@ -156,15 +203,14 @@ def run_stat():
             )
         ):
             predict_ok = bool(rec.predict_result)
+            if args.stat_use_matchwinner_only:
+                predict_ok = bool(rec.back_win_match)
+            # print(f"{rec.back_name} {rec.oppo_name} -> {predict_ok}")
             wl.hit(iswin=predict_ok)
             surf_wl_dct[rec.surface].hit(iswin=predict_ok)
             rnd_wl_dct[get_rnd(rec.rnd)].hit(iswin=predict_ok)
             book_start_chances.append(rec.book_start_chance)
-            back_coef = get_back_coef()
-            if back_coef is not None:
-                profiter.calculate_bet(
-                    coef=back_coef, iswin=bool(rec.back_win_match))
-
+            do_profiter()
             if (
                 rec.back_win_match in (0, 1)
                 and abs(rec.book_start_chance - 0.5) > 0.001
@@ -176,8 +222,12 @@ def run_stat():
     print(f"stat: {wl} nw: {wl.win_count} nl: {wl.loss_count}")
     pprint([(s, str(w).strip()) for s, w in surf_wl_dct.items()])
     pprint([(r, str(w).strip()) for r, w in rnd_wl_dct.items()])
-    avg_book_start_chance = round(sum(book_start_chances)/len(book_start_chances), 3)
-    print(f"avg book_start_chance: {avg_book_start_chance} profit: {profiter}")
+    if book_start_chances:
+        avg_book_start_chance = round(sum(book_start_chances)/len(book_start_chances), 3)
+    else:
+        avg_book_start_chance = None
+    print(f"avg book_start_chance: {avg_book_start_chance}")
+    print(f"profit by matched coefs: {profiter}")
     print(f"bystartbook wl : {bystartbook_wl}")
 
 
@@ -207,7 +257,7 @@ def _read_match_score(sex: str, pid1: int, pid2: int, rec_date: date):
         return winner_id, loser_id, res_score
 
 
-def run_matchwinner_flag():
+def run_matchresult_flags():
     assert predicts_db_hnd is not None, 'not opened db'
     predicts_db_hnd.query_predicts()
     n_ok, n_err = 0, 0
@@ -224,28 +274,8 @@ def run_matchwinner_flag():
                     rec.back_win_match = -2
                 else:
                     rec.back_win_match = int(rec.back_id == wid)
-                n_ok += 1
-    if n_ok > 0:
-        predicts_db_hnd.commit()
-    print(f"n_ok: {n_ok}, n_err: {n_err}")
 
-
-def run_predictresult_flag():
-    assert predicts_db_hnd is not None, 'not opened db'
-    predicts_db_hnd.query_predicts()
-    n_ok, n_err = 0, 0
-    for rec in predicts_db_hnd.records:
-        if rec.predict_result == PredictResult.empty:
-            res = _read_match_score(sex=rec.sex, pid1=rec.back_id, pid2=rec.oppo_id,
-                                    rec_date=rec.date)
-            if res is None:
-                print(f"NOT FOUND RES {rec.date} {rec.back_name} {rec.oppo_name}")
-                n_err += 1
-            else:
-                wid, lid, res_scr = res
-                if res_scr.retired:
-                    rec.predict_result = PredictResult.retired.value
-                else:
+                if rec.predict_result == PredictResult.empty:
                     if rec.case_name == 'secondset_00':
                         rec.predict_result = int(res_scr.sets_count() > 2)
                     else:
@@ -256,42 +286,93 @@ def run_predictresult_flag():
     print(f"n_ok: {n_ok}, n_err: {n_err}")
 
 
-def parse_command_line_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--run_tocsv", action="store_true")
-    parser.add_argument("--run_matchwinner", action="store_true")
-    parser.add_argument("--run_predictresult", action="store_true")
+def _test_db_add_two_records():
+    def add_rec(*args, **kwargs):
+        r = predicts_dbsa.PredictRec(*args, **kwargs)
+        predicts_db_hnd.insert_obj(r)
 
-    parser.add_argument("--run_stat", action="store_true")
-    parser.add_argument("--sex", type=str, default="")
-    parser.add_argument("--casename", type=str, default="")
-    parser.add_argument("--minproba", type=float, default=None)
-    parser.add_argument("--maxproba", type=float, default=None)
+    assert predicts_db_hnd is not None, 'not opened db'
 
-    parser.add_argument("--rejected", dest="rejected", action="store_true")
-    parser.add_argument("--no-rejected", dest="rejected", action="store_false")
-
-    parser.add_argument("--opener", dest="opener", action="store_true")
-    parser.add_argument("--no-opener", dest="opener", action="store_false")
-    parser.set_defaults(opener=None, rejected=None)
-    return parser.parse_args()
+    add_rec(
+        date=datetime.date(2031, 7, 21),
+        sex='wta',
+        case_name='decided_00',
+        tour_name='Olympics',
+        level='main',
+        surface='Hard',
+        rnd='First',
+        back_id=123,
+        oppo_id=456,
+        back_name='test-backname',
+        oppo_name='test-opponame',
+        book_start_chance=0.6,
+        predict_proba=0.7,
+        predict_result=-1,
+        comments='0123456789abcdefghij0123456789ABCDEFGHIJ',
+    )
+    add_rec(
+        date=datetime.date(2031, 7, 22),
+        sex='wta',
+        case_name='decided_00',
+        tour_name='Olympics',
+        level='main',
+        surface='Hard',
+        rnd='First',
+        back_id=234,
+        oppo_id=567,
+        back_name='test-backname',
+        oppo_name='test-opponame',
+        book_start_chance=0.6,
+        predict_proba=0.75,
+        predict_result=-1,
+        comments='0123456789abcdefghij0123456789ABCDEFGHIJ',
+    )
+    predicts_db_hnd.commit()
 
 
 if __name__ == "__main__":
+    import argparse
+
+    def parse_command_line_args():
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--run_testadd", action="store_true")
+        parser.add_argument("--run_tocsv", action="store_true")
+        parser.add_argument("--run_matchresult", action="store_true")
+
+        parser.add_argument("--run_stat", action="store_true")
+        parser.add_argument("--sex", type=str, default="")
+        parser.add_argument("--casename", type=str, default="")
+        parser.add_argument("--minproba", type=float, default=None)
+        parser.add_argument("--maxproba", type=float, default=None)
+
+        parser.add_argument("--rejected", dest="rejected", action="store_true")
+        parser.add_argument("--no-rejected", dest="rejected", action="store_false")
+
+        parser.add_argument("--opener", dest="opener", action="store_true")
+        parser.add_argument("--no-opener", dest="opener", action="store_false")
+
+        parser.add_argument("--stat-use-matchwinner-only", dest="stat_use_matchwinner_only",
+                            action="store_true")
+
+        parser.set_defaults(opener=None, rejected=None)
+        return parser.parse_args()
+
     args = parse_command_line_args()
+    if args.run_testadd:
+        print('test_add start')
+        initialize()
+        _test_db_add_two_records()
+        print('test_add finish')
+        exit(0)
+
     if args.run_tocsv:
         initialize()
         run_dump_all_to_csv()
     elif args.run_stat:
         initialize()
         run_stat()
-    elif args.run_matchwinner:
+    elif args.run_matchresult:
         dba.open_connect()
         initialize()
-        run_matchwinner_flag()
-        dba.close_connect()
-    elif args.run_predictresult:
-        dba.open_connect()
-        initialize()
-        run_predictresult_flag()
+        run_matchresult_flags()
         dba.close_connect()

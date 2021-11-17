@@ -2,7 +2,9 @@ import os
 import re
 import copy
 from collections import defaultdict, Counter
+from typing import Optional
 
+from side import Side
 import common as co
 import cfg_dir
 import dict_tools
@@ -137,6 +139,42 @@ class SizedValue:
             return other
         value = co.balanced_value(self.value, self.size, other.value, other.size)
         return SizedValue(value, self.size + other.size)
+
+
+def make_get_adv_side(
+    min_adv_size: int,
+    min_adv_value: float,
+    min_oppo_size: int,
+    max_oppo_value: float,
+):
+    def get_adv_side(fst_sv: SizedValue, snd_sv: SizedValue) -> Optional[Side]:
+        """ return Side('LEFT') if fst_sv has advantage,
+                   Side('RIGHT') if snd_sv has advantage,
+                   None if nobody has advantage
+        """
+        if fst_sv is None or snd_sv is None:
+            return None
+        fst_val, snd_val = fst_sv.value, snd_sv.value
+        if fst_val is None or snd_val is None:
+            return None
+        if min_adv_size == min_oppo_size:
+            fst_val, snd_val = co.twoside_values(fst_sv, snd_sv)
+        if (
+            fst_sv.size >= min_adv_size
+            and snd_sv.size >= min_oppo_size
+            and fst_val >= min_adv_value
+            and snd_val <= max_oppo_value
+        ):
+            return Side('LEFT')
+        if (
+            fst_sv.size >= min_oppo_size
+            and snd_sv.size >= min_adv_size
+            and fst_val <= max_oppo_value
+            and snd_val >= min_adv_value
+        ):
+            return Side('RIGHT')
+
+    return get_adv_side
 
 
 class ReportLine(SizedValue):
@@ -319,6 +357,8 @@ class ReportLineList:
             rpt_line.value = co.to_interval(rpt_line.value)
 
     def sub_detailed(self, keys):
+        """ вернем только с требуемыми key.
+            Но тогда надо пересчитать key=all (а входной если был - игнорить) """
         results = []
         for rpt_line in self._report_lines:
             for key in keys:
@@ -347,6 +387,15 @@ class ReportLineList:
                 )
             )
         return ReportLineList(items=results)
+
+    def size_sum(self):
+        return sum([r.size for r in self._report_lines])
+
+    def size_at_all_key(self):
+        """Ищется размер элемента с пустым ключем (соответсвует категории all)"""
+        allkey_rpt_line = self.find_first(key=co.StructKey())
+        if allkey_rpt_line:
+            return allkey_rpt_line.size
 
     def normalized(self):
         rpt_from_key = {}
@@ -392,15 +441,6 @@ class ReportLineList:
                 mixed_lines.append(report_line)
         return ReportLineList(items=mixed_lines)
 
-    def size_sum(self):
-        return sum([r.size for r in self._report_lines])
-
-    def size_at_all_key(self):
-        """Ищется размер элемента с пустым ключем (соответсвует категории all)"""
-        allkey_rpt_line = self.find_first(key=co.StructKey())
-        if allkey_rpt_line:
-            return allkey_rpt_line.size
-
     def weight_value(self, weights):
         nw_sum = sum([weights[len(r.key)] * r.size for r in self._report_lines])
         if co.equal_float(nw_sum, 0.0):
@@ -415,3 +455,16 @@ class ReportLineList:
                 if r.value is not None
             ]
         )
+
+    def weight_value_experimental(self, weights):
+        """ предполагаем что применяться будет к списку где элементы (keys) непересек-ся """
+        n_sum = sum([r.size for r in self._report_lines])
+        if n_sum == 0:
+            return None
+        return sum(
+            [
+                weights[len(r.key)] * r.size * r.value
+                for r in self._report_lines
+                if r.value is not None
+            ]
+        ) / n_sum

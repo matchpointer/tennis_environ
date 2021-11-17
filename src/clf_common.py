@@ -17,7 +17,6 @@ from catboost import CatBoostClassifier
 
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.pipeline import make_pipeline
-from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import RFE
 from sklearn.metrics import (
     accuracy_score,
@@ -955,14 +954,14 @@ def save_df(df, storage_dir, subname):
 
 def load_df(storage_dir, subname):
     if storage_dir:
-        filename = storage_dir + "\\" + subname + "\\df.csv"
+        filename = os.path.join(storage_dir, subname, "df.csv")
         if os.path.isfile(filename):
             return pd.read_csv(filename, sep=",")
 
 
 def load_clf(model_name, key):
     dirname = persist_dirname(model_name, key, "clf")
-    filename = "{}/clf.pkl".format(dirname)
+    filename = os.path.join(dirname, "clf.pkl")
     if os.path.isfile(filename):
         with open(filename, "r") as fh:
             return pickle.load(fh)
@@ -970,7 +969,7 @@ def load_clf(model_name, key):
 
 def save_clf(clf, model_name, key):
     dirname = persist_dirname(model_name, key, "clf")
-    filename = "{}/clf.pkl".format(dirname)
+    filename = os.path.join(dirname, "clf.pkl")
     if os.path.isfile(filename):
         fu.remove_file(filename)
     with open(filename, "w") as fh:
@@ -996,166 +995,6 @@ def substract_df(df, df_substr, inplace=True):
         df.drop(del_idxes, inplace=True)
     else:
         return df.drop(del_idxes, inplace=False)
-
-
-class PersistDataSet(object):
-    def __init__(
-        self, key, suffix, size, etalon_feat_names, label_name, subname, is_w=False
-    ):
-        self.key = key
-        self.suffix = suffix  # samples: 'total_h2h', 'total'
-        self.subname = subname  # 'test' or 'eval'
-        self.size = size
-        self.etalon_feat_names = etalon_feat_names
-        self.label_name = label_name
-
-        self.feat_names = None
-        # numpy arrays:
-        self.X = None
-        self.y = None
-        self.w = None
-        self.is_w = is_w
-        self.date = None
-        self.fst_pid = None
-        self.snd_pid = None
-
-    def contains_sample(self, date, fst_pid, snd_pid):
-        if (
-            self.date is not None
-            and self.fst_pid is not None
-            and self.snd_pid is not None
-        ):
-            return (date, fst_pid, snd_pid) in list(
-                zip(self.date, self.fst_pid, self.snd_pid)
-            )
-
-    def save(self):
-        dirname = persist_dirname(
-            model_name=self.suffix, key=self.key, subname=self.subname
-        )
-        np.save(dirname + "/X.npy", self.X)
-        np.save(dirname + "/y.npy", self.y)
-        np.save(dirname + "/date.npy", self.date)
-        np.save(dirname + "/fst_pid.npy", self.fst_pid)
-        np.save(dirname + "/snd_pid.npy", self.snd_pid)
-        np.save(dirname + "/feat_names.npy", self.feat_names)
-        if self.is_w:
-            np.save(dirname + "/w.npy", self.w)
-
-    def load(self):
-        try:
-            dirname = persist_dirname(
-                model_name=self.suffix, key=self.key, subname=self.subname
-            )
-            self.X = np.load(dirname + "/X.npy", allow_pickle=True)
-            self.y = np.load(dirname + "/y.npy", allow_pickle=True)
-            self.date = np.load(dirname + "/date.npy", allow_pickle=True)
-            self.fst_pid = np.load(dirname + "/fst_pid.npy", allow_pickle=True)
-            self.snd_pid = np.load(dirname + "/snd_pid.npy", allow_pickle=True)
-            self.feat_names = np.load(
-                dirname + "/feat_names.npy", allow_pickle=True
-            ).tolist()
-            if self.is_w:
-                self.w = np.load(dirname + "/w.npy", allow_pickle=True)
-
-            if self.feat_names != self.etalon_feat_names:
-                print(
-                    "npy {} load: differ loaded feat_names:\n{} {} {}".format(
-                        self.subname, self.key, self.suffix, self.feat_names
-                    )
-                )
-            return True
-        except (IOError, ValueError) as err:
-            print(
-                "load npy {} failed {} at {} {}".format(
-                    self.subname, err, self.key, self.suffix
-                )
-            )
-            return False
-
-    def removed_from(self, df):
-        """return dataframe filtered so that our self rows is removed"""
-        key_trips = list(zip(self.date, self.fst_pid, self.snd_pid))
-        remain_idxes = [
-            i
-            for i in df.index
-            if (df.loc[i, "date"], df.loc[i, "fst_pid"], df.loc[i, "snd_pid"])
-            not in key_trips
-        ]
-        return df.filter(items=remain_idxes, axis=0)
-
-    def removed_from_2(self, df):
-        """return dataframe filtered so that our self rows is removed"""
-        key_trips = list(zip(self.date, self.fst_pid, self.snd_pid))
-        inner_idxes = [
-            i
-            for i in df.index
-            if (df.loc[i, "date"], df.loc[i, "fst_pid"], df.loc[i, "snd_pid"])
-            in key_trips
-        ]
-        outer_idxes = [
-            i
-            for i in df.index
-            if (df.loc[i, "date"], df.loc[i, "fst_pid"], df.loc[i, "snd_pid"])
-            not in key_trips
-        ]
-        return df.filter(items=outer_idxes, axis=0), inner_idxes
-
-    def create(self, df, random_state=None):
-        X = df[self.etalon_feat_names].values
-        y = df[self.label_name].values
-        date = df["date"].values
-        fst_pid = df["fst_pid"].values
-        snd_pid = df["snd_pid"].values
-        if self.is_w:
-            w = df["weight"].values
-            (
-                _,
-                self.X,
-                _,
-                self.y,
-                _,
-                self.w,
-                _,
-                self.date,
-                _,
-                self.fst_pid,
-                _,
-                self.snd_pid,
-            ) = train_test_split(
-                X,
-                y,
-                w,
-                date,
-                fst_pid,
-                snd_pid,
-                stratify=y,
-                test_size=self.size,
-                random_state=random_state,
-            )
-        else:
-            (
-                _,
-                self.X,
-                _,
-                self.y,
-                _,
-                self.date,
-                _,
-                self.fst_pid,
-                _,
-                self.snd_pid,
-            ) = train_test_split(
-                X,
-                y,
-                date,
-                fst_pid,
-                snd_pid,
-                stratify=y,
-                test_size=self.size,
-                random_state=random_state,
-            )
-        self.feat_names = self.etalon_feat_names
 
 
 class DataSet(object):
@@ -1514,65 +1353,46 @@ def splited_by_year(df: pd.DataFrame, split) -> Splited:
 
 
 def split_dataframe_stratify_n(
-    df, split, test_size, eval_size, storage_dir, target_names, random_state=None
+    df, split, test_size, eval_size, target_names, random_state=None
 ):
     assert isinstance(target_names, list) and len(target_names) >= 1
     if split is None:
         return Splited(train=df, eval=None, test=None)
     elif split is False:
-        df_test = load_df(storage_dir, "test")
-        if df_test is not None:
-            df_train = substract_df(df, df_test)
-            out("test is restored from csv")
-        else:
-            msss = MultilabelStratifiedShuffleSplit(
-                n_splits=1, test_size=test_size, random_state=random_state
-            )
-            multi_lbl_arr = df[target_names].values
-            i_train, i_test = next(msss.split(np.zeros(df.shape[0]), multi_lbl_arr))
-            idx_train = [df.index[i] for i in i_train]
-            idx_test = [df.index[i] for i in i_test]
-            df_test = df.loc[idx_test, :]
-            df_train = df.loc[idx_train, :]
-            if storage_dir:
-                save_df(df_test, storage_dir, "test")
+        msss = MultilabelStratifiedShuffleSplit(
+            n_splits=1, test_size=test_size, random_state=random_state
+        )
+        multi_lbl_arr = df[target_names].values
+        i_train, i_test = next(msss.split(np.zeros(df.shape[0]), multi_lbl_arr))
+        idx_train = [df.index[i] for i in i_train]
+        idx_test = [df.index[i] for i in i_test]
+        df_test = df.loc[idx_test, :]
+        df_train = df.loc[idx_train, :]
         return Splited(train=df_train, eval=None, test=df_test)
     elif split is True:
-        df_test = load_df(storage_dir, "test")
-        df_eval = load_df(storage_dir, "eval")
-        if df_test is not None and df_eval is not None:
-            substract_df(df, df_test)
-            substract_df(df, df_eval)
-            out("eval, test are restored from csv")
-            return Splited(train=df, eval=df_eval, test=df_test)
-        else:
-            msss = MultilabelStratifiedShuffleSplit(
-                n_splits=1, test_size=test_size, random_state=random_state
-            )
-            multi_lbl_arr = df[target_names].values
-            i_train_eval, i_test = next(
-                msss.split(np.zeros(df.shape[0]), multi_lbl_arr)
-            )
-            idx_train_eval = [df.index[i] for i in i_train_eval]
-            idx_test = [df.index[i] for i in i_test]
-            df_test = df.loc[idx_test, :]
-            if storage_dir:
-                save_df(df_test, storage_dir, "test")
+        msss = MultilabelStratifiedShuffleSplit(
+            n_splits=1, test_size=test_size, random_state=random_state
+        )
+        multi_lbl_arr = df[target_names].values
+        i_train_eval, i_test = next(
+            msss.split(np.zeros(df.shape[0]), multi_lbl_arr)
+        )
+        idx_train_eval = [df.index[i] for i in i_train_eval]
+        idx_test = [df.index[i] for i in i_test]
+        df_test = df.loc[idx_test, :]
 
-            msss2 = MultilabelStratifiedShuffleSplit(
-                n_splits=1, test_size=eval_size, random_state=random_state
-            )
-            multi_lbl_arr2 = df.loc[idx_train_eval, target_names].values
-            i_train, i_eval = next(
-                msss2.split(np.zeros(df.shape[0] - len(i_test)), multi_lbl_arr2)
-            )
-            idx_train = [idx_train_eval[i] for i in i_train]
-            idx_eval = [idx_train_eval[i] for i in i_eval]
-            df_eval = df.loc[idx_eval, :]
-            df_train = df.loc[idx_train, :]
-            if storage_dir:
-                save_df(df_eval, storage_dir, "eval")
-            return Splited(train=df_train, eval=df_eval, test=df_test)
+        msss2 = MultilabelStratifiedShuffleSplit(
+            n_splits=1, test_size=eval_size, random_state=random_state
+        )
+        multi_lbl_arr2 = df.loc[idx_train_eval, target_names].values
+        i_train, i_eval = next(
+            msss2.split(np.zeros(df.shape[0] - len(i_test)), multi_lbl_arr2)
+        )
+        idx_train = [idx_train_eval[i] for i in i_train]
+        idx_eval = [idx_train_eval[i] for i in i_eval]
+        df_eval = df.loc[idx_eval, :]
+        df_train = df.loc[idx_train, :]
+        return Splited(train=df_train, eval=df_eval, test=df_test)
 
 
 def make_data(
@@ -1631,7 +1451,6 @@ def fill_data_ending_stratify_n(
     split,
     test_size,
     eval_size,
-    storage_dir,
     feature_names,
     label_name,
     other_names,
@@ -1645,7 +1464,6 @@ def fill_data_ending_stratify_n(
         split,
         test_size,
         eval_size,
-        storage_dir,
         [label_name] + other_names,
         random_state=random_state,
     )

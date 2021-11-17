@@ -16,12 +16,14 @@ import tkinter.ttk
 from selenium.common.exceptions import TimeoutException
 from requests.exceptions import RequestException
 
+import clf_decided_00_apply
 import stopwatch
 
 import common as co
 import log
 import cfg_dir
 import config_personal
+from side import Side
 import ratings
 import tennis_time as tt
 import bet_coefs
@@ -30,8 +32,6 @@ import sms_svc
 import oncourt_players
 import common_wdriver
 import matchstat
-from clf_common import PosNeg
-import clf_decided_00
 
 import clf_secondset_00
 import decided_set
@@ -44,7 +44,6 @@ from live import (
     initialize as live_initialize,
     initialize_players_cache,
 )
-from debug_helper import get_debug_match_name, set_debug_match_name, debug_match_data_save
 from tournament_misc import log_events, events_tostring
 import betfair_client
 
@@ -55,8 +54,10 @@ from live_alerts import (
     AlertSet2WinClf,
     AlertScEqualTieRatio,
     AlertScEqualSetend,
+    AlertSc35Srv,
 )
 import predicts_db
+from report_line import make_get_adv_side
 
 
 _DEFAULT_MARKET_NAME = "MATCH_ODDS"
@@ -206,84 +207,69 @@ class Application(tkinter.Frame):
         return bool(self.slow_allow_mode_var.get())
 
     def make_alerts(self):
-        clf_decided_00.initialize()
+        clf_decided_00_apply.load_variants()
         clf_secondset_00.initialize()
         sex = "wta"
 
         self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
-            back_opener=None, strict_min_probas=PosNeg(0.65, 0.65)))
+            back_opener=None))
         self.alerts_from_sex[sex].append(AlertSet2WinClf())
 
         self.alerts_from_sex[sex].append(
             AlertScEqualTieRatio(
                 "decided",
-                max_rating=400,
-                max_dif_rating=200,
-                min_proba=0.57,
-                max_lay_ratio=0.5,
-                min_size=12,
+                max_surf_rank_dif=65,
+                adv_side_funs=(
+                    make_get_adv_side(min_adv_size=10, min_adv_value=0.57,
+                                      min_oppo_size=10, max_oppo_value=0.52),
+                    make_get_adv_side(min_adv_size=12, min_adv_value=0.65,
+                                      min_oppo_size=2, max_oppo_value=0.4),
+                    make_get_adv_side(min_adv_size=6, min_adv_value=0.71,
+                                      min_oppo_size=12, max_oppo_value=0.36),
+                ),
             )
         )
 
-        # self.alerts_from_sex[sex].append(
-        #     AlertScEqualSetend(
-        #         setname="decided",
-        #         insetscore=(4, 4),
-        #         back_srv=True,
-        #         min_back_ratio=0.7,
-        #         max_lay_ratio=0.55,
-        #         min_size=14,
-        #     )
-        # )
-        # self.alerts_from_sex[sex].append(
-        #     AlertScEqualSetend(
-        #         setname="decided",
-        #         insetscore=(4, 4),
-        #         back_srv=False,
-        #         min_back_ratio=0.7,
-        #         max_lay_ratio=0.55,
-        #         min_size=14,
-        #     )
-        # )
+        self.alerts_from_sex[sex].append(
+            AlertSc35Srv(
+                setname='decided',
+                srv_side=Side('LEFT'),
+                max_lay_ratio=0.55,
+                min_size=10,
+                max_oppo_rank_adv_dif=80,
+            )
+        )
+        self.alerts_from_sex[sex].append(
+            AlertSc35Srv(
+                setname='decided',
+                srv_side=Side('RIGHT'),
+                max_lay_ratio=0.55,
+                min_size=10,
+                max_oppo_rank_adv_dif=80,
+            )
+        )
 
         # -------------------------- atp -----------------------------
         sex = "atp"
 
         self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
-            back_opener=None, strict_min_probas=None))
+            back_opener=None))
         self.alerts_from_sex[sex].append(AlertSet2WinClf())
 
         self.alerts_from_sex[sex].append(
             AlertScEqualTieRatio(
                 "decided",
-                max_rating=400,
-                max_dif_rating=200,
-                min_proba=0.57,
-                max_lay_ratio=0.5,
-                min_size=14,
+                max_surf_rank_dif=65,
+                adv_side_funs=(
+                    make_get_adv_side(min_adv_size=12, min_adv_value=0.575,
+                                      min_oppo_size=12, max_oppo_value=0.52),
+                    make_get_adv_side(min_adv_size=14, min_adv_value=0.66,
+                                      min_oppo_size=3, max_oppo_value=0.4),
+                    make_get_adv_side(min_adv_size=8, min_adv_value=0.8,
+                                      min_oppo_size=12, max_oppo_value=0.36),
+                ),
             )
         )
-
-        # self.alerts_from_sex[sex].append(
-        #     AlertScEqualSetend(
-        #         setname="decided",
-        #         insetscore=(4, 4),
-        #         back_srv=True,
-        #         min_back_ratio=0.75,
-        #         max_lay_ratio=0.6,
-        #         min_size=14,
-        #     )
-        # )
-        # self.alerts_from_sex[sex].append(
-        #     AlertScEqualSetend(
-        #         setname="decided",
-        #         insetscore=(4, 4),
-        #         back_srv=False,
-        #         min_back_ratio=0.75,
-        #         max_lay_ratio=0.6,
-        #         min_size=14,
-        #     )
-        # )
 
     def is_slow_mode(self):
         return int(self.timer.threshold) == self.slow_timeout
@@ -292,7 +278,6 @@ class Application(tkinter.Frame):
         return int(self.timer.threshold) == self.quick_timeout
 
     def save_page(self):
-        debug_match_data_save()
         self.drv.save_page(filename="./live_mon_cur_page.html", encoding="utf8")
 
     def log_events(self, head="", extended=True, flush=False):
@@ -490,7 +475,7 @@ class Application(tkinter.Frame):
                         a
                         for a in alert_messages
                         if (a.case_name.startswith("decided_66")
-                            or a.case_name.startswith("decided_44"))
+                            or a.case_name.startswith("decided_35srv"))
                     ]
                 )
             except sms_svc.SMSError as err:
@@ -500,8 +485,9 @@ class Application(tkinter.Frame):
     def out_betfair_messages(alert_messages):
         for msg in alert_messages:
             if (
-                msg.case_name == "decided_00"
-                or (msg.sex == 'wta' and msg.case_name == "secondset_00")
+                msg.case_name in (
+                    "decided_00", "secondset_00", "decided_66", "decided_35srv"
+                )
             ):
                 summary_href = msg.summary_href if msg.summary_href else ""
                 betfair_client.send_message(
@@ -590,20 +576,9 @@ def main():
         rnd_detailing=True,
     )
     weeked_tours.use_tail_tours_cache = True
-    # impgames_stat.initialize_results(
-    #     'wta', min_date=datetime.date.today() - datetime.timedelta(
-    #                                      days=impgames_stat.HISTORY_DAYS))
-    # impgames_stat.initialize_results(
-    #     'atp', min_date=datetime.date.today() - datetime.timedelta(
-    #                                      days=impgames_stat.HISTORY_DAYS))
-    # tie_stat.initialize_results(sex=None,
-    #                             min_date=now_date - datetime.timedelta(days=365 * 3),
-    #                             max_date=None)
     live_initialize()
-    # set_debug_match_name("Papashvili D. - Kremnev A.")
-    # log.info("DEBUG_MATCH_DATA_NAME: {}".format(get_debug_match_name()))
     app = Application(
-        company_name=args.company_name, quick_timeout=2.0, slow_timeout=132
+        company_name=args.company_name, quick_timeout=2.2, slow_timeout=132
     )
     app.master.title("Live monitor")
     predicts_db.initialize()

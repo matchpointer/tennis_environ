@@ -2,23 +2,21 @@ r"""
 module gives Alert with subclasses.
 """
 from collections import namedtuple
-from typing import Optional
+from typing import Optional, Tuple
+from dataclasses import dataclass, field
 
-
+import clf_decided_00_apply
 from side import Side
 import common as co
 import log
-import ratings
 import clf_common as cco
 from score import Scr, setidx_by_name
-import clf_decided_00
 import clf_secondset_00
 from live import LiveMatch
 import betfair_client
 import inset_keep_recovery
 
 import tieloss_affect_stat
-import set2_after_set1loss_stat
 import feature
 from report_line import SizedValue
 import predicts_db
@@ -197,6 +195,10 @@ def tieloss_affect_side(
             return check_side
 
 
+def final_comment(*args) -> str:
+    return ' '.join([a for a in args if a])
+
+
 class AlertSetDecided(AlertSet):
     """уведомление о решающем сете"""
 
@@ -225,16 +227,14 @@ class AlertSetDecidedWinClf(AlertSetDecided):
     def __init__(
         self,
         back_opener: Optional[bool],
-        strict_min_probas: Optional[cco.PosNeg],
     ):
         super().__init__(back_opener=back_opener)
-        self.strict_min_probas = strict_min_probas
         self.dec_begin_adv_dif = 0.1
         self.dec_begin_min_size = 10
 
     def _condition_common(self, match: LiveMatch):
         """co.LEFT, co.RIGHT (who will opener), False (gone), True (attention)"""
-        if clf_decided_00.skip_cond(match):
+        if clf_decided_00_apply.skip_cond(match):
             return False
         if match.left_service is None:
             return None
@@ -299,42 +299,21 @@ class AlertSetDecidedWinClf(AlertSetDecided):
             if var1 is not None and var2 is not None:
                 return var1 == var2
 
-        def strict_fired():
-            if self.strict_min_probas:
-                variant = cco.Variant.find_match_variant(
-                    match, clf_decided_00.work_variants)
-                if variant is not None:
-                    return (
-                        (clf_back_side == set_opener_side
-                         and self.strict_min_probas.neg >= variant.min_probas.neg)
-                        or
-                        (clf_back_side != set_opener_side
-                         and self.strict_min_probas.pos >= variant.min_probas.pos)
-                    )
-
         def checked_return(back_side: Side, prob, comment: str, rejected: bool):
-            is_fired = (
-                not self.strict_min_probas
-                or strict_fired()
-                or (match.sex == 'wta' and '+' in comments)
-            )
-            allow_res = None
-            if is_fired:
-                if not rejected:
-                    allow_res = allow_back(match, back_side, self, prob)
-                    if allow_res:
-                        return back_side, prob, comment
-                    rejected = True
-            if rejected:
-                if allow_res is not None and allow_res.comment:
-                    comment += ' ' + allow_res.comment
-                log.info(
-                    f"{self.__class__.__name__} rejected {match.name}"
-                    f" back_side {back_side} {comment}"
-                )
+            allow_res = allow_back(match, back_side, self, prob)
+            ignored = (bool(allow_res)
+                       or str(allow_res) not in ('recently_won_h2h', 'absence'))
+            if rejected or not allow_res:
+                comment = final_comment(comment.strip(), str(allow_res))
                 predicts_db.write_rejected(
                     match, 'decided_00', back_side, reason=comment)
-            return False
+                log.info(
+                    f"{self.__class__.__name__} {match.name}"
+                    f" our {back_side} {comment}"
+                    f" {'ignored' if ignored else 'rejected'}")
+            if not ignored:
+                return False
+            return back_side, prob, comment
 
         if clf_back_side is None:
             return False
@@ -342,20 +321,13 @@ class AlertSetDecidedWinClf(AlertSetDecided):
         tieaff_codirect = codirect(opener_has_clf_adv, opener_has_tieaff_adv)
         begadv_codirect = codirect(opener_has_clf_adv, opener_has_begin_adv)
         comments = ""
-        if tieaff_codirect is not None:
-            comments += ("+tieaff" if tieaff_codirect else "-tieaff")
         if begadv_codirect is not None:
-            comments += (" +begadv" if begadv_codirect else " -begadv")
-
-        if tieaff_codirect is False:
-            return checked_return(clf_back_side, clf_prob, comments, rejected=True)
-        if begadv_codirect is False:
-            if clf_prob < 0.7:
-                comments += " cP<0.7"
-                return checked_return(clf_back_side, clf_prob, comments, rejected=True)
-            else:
-                comments += " cP>0.7"
-        return checked_return(clf_back_side, clf_prob, comments, rejected=False)
+            comments += f"{'+' if begadv_codirect else '-'}begadv"
+        if tieaff_codirect is not None:
+            comments += f" {'+' if tieaff_codirect else '-'}tieaff"
+        return checked_return(
+            clf_back_side, clf_prob, comments,
+            rejected=begadv_codirect is False or tieaff_codirect is False)
 
     def _condition_now(self, match: LiveMatch, set_opener_side: Side):
         """Analyze current match state.
@@ -365,163 +337,20 @@ class AlertSetDecidedWinClf(AlertSetDecided):
             inset = match.score[-1]
             if inset == (0, 0):
                 opener_beg_sv, closer_beg_sv = self.dec_begin_svalues(
-                    match, set_opener_side
-                )
+                    match, set_opener_side)
                 opener_has_begin_adv = self.dec_begin_opener_adv(
-                    opener_beg_sv, closer_beg_sv
-                )
+                    opener_beg_sv, closer_beg_sv)
                 opener_has_tieaff_adv = self.tieloss_affect_opener_adv(
-                    match, set_opener_side
-                )
-                clf_back_side, prob = clf_decided_00.match_has_min_proba(
-                    match, set_opener_side
-                )
+                    match, set_opener_side)
+                clf_back_side, prob = clf_decided_00_apply.match_has_min_proba(
+                    match, set_opener_side)
                 return self.decision(
                     match,
                     set_opener_side,
                     clf_back_side,
                     prob,
                     opener_has_tieaff_adv,
-                    opener_has_begin_adv,
-                )
-        return True
-
-
-class AlertSetAfterTie(AlertSet):
-    def __init__(self, setname, max_rating, max_dif_rating):
-        super(AlertSetAfterTie, self).__init__(setname=setname, back_opener=None)
-        self.rtg_side_cond = ratings.SideCondition(max_rating, max_dif_rating)
-        set_idx = setidx_by_name(setname)
-        if set_idx is None:
-            log.error(f"can not get setnum for setidx: {setname} assume 0")
-            set_idx = 1
-        self.trg_setnum = set_idx + 1
-
-    def _condition_now(self, match: LiveMatch, set_opener_side: Side):
-        """Analyze current match state.
-        Return back side (if fired), False (if gone), True (if attention)"""
-        raise NotImplementedError()
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will opener), False (gone), True (attention)"""
-        if self.rtg_side_cond.condition_both_below(match) in (True, None):
-            log.info(
-                "{} reject {} max both rtg".format(self.__class__.__name__, match.name)
-            )
-            return False
-        setnum_full = match.score.sets_count(full=True)
-        if setnum_full < (self.trg_setnum - 2):
-            return None  # too early now
-        elif setnum_full == (self.trg_setnum - 2):
-            if len(match.score) == (setnum_full + 1) and match.score[-1] == (6, 6):
-                return True  # after this tie will be our event
-            return None
-        elif setnum_full == (self.trg_setnum - 1):
-            if match.score[setnum_full - 1] not in ((7, 6), (6, 7)):
-                return False
-            if len(match.score) == setnum_full or match.score[-1] == (0, 0):
-                srv_side = match.curset_opener_side()
-                return srv_side if srv_side is not None else co.LEFT
-            return False
-        elif setnum_full > (self.trg_setnum - 1):
-            return False
-
-
-class AlertSetAfterTieAffect(AlertSetAfterTie):
-    def __init__(self, setname, max_rating=450, max_dif_rating=300):
-        super(AlertSetAfterTieAffect, self).__init__(
-            setname, max_rating, max_dif_rating
-        )
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will opener), False (gone), True (attention)"""
-        if match.soft_level not in ("main", "chal"):  # for chal
-            return False
-        if match.sex == "atp" and match.best_of_five:
-            return False
-        if not match.first_player or not match.second_player:
-            return False
-        is_fst_aff = tieloss_affect_stat.is_player_affect_high(
-            match.sex, match.first_player.ident
-        )
-        is_snd_aff = tieloss_affect_stat.is_player_affect_high(
-            match.sex, match.second_player.ident
-        )
-        if not is_fst_aff and not is_snd_aff:
-            return False
-        return super(AlertSetAfterTieAffect, self)._condition_common(match)
-
-    def _condition_now(self, match: LiveMatch, set_opener_side: Side):
-        """Analyze current match state.
-        Return back side (if fired), False (if gone), True (if attention)
-        """
-        if match.score:
-            inset = match.score[-1]
-            if inset == (0, 0):
-                prev_trg_scr = match.score[self.trg_setnum - 2]
-                if prev_trg_scr not in ((7, 6), (6, 7)):
-                    log.error(
-                        "{} {} NOT TIE SCORE: {}".format(
-                            self.__class__.__name__, match.name, prev_trg_scr
-                        )
-                    )
-                    return False
-                losstie_side = (
-                    co.LEFT if prev_trg_scr[0] < prev_trg_scr[1] else co.RIGHT
-                )
-                if not self.rtg_side_cond.condition(match, losstie_side.fliped()):
-                    return False
-                if losstie_side == co.LEFT:
-                    is_aff = tieloss_affect_stat.is_player_affect_high(
-                        match.sex, match.first_player.ident
-                    )
-                else:
-                    is_aff = tieloss_affect_stat.is_player_affect_high(
-                        match.sex, match.second_player.ident
-                    )
-
-                if is_aff and self.extra_condition(
-                    match, set_opener_side, losstie_side
-                ):
-                    backing_side, prob = losstie_side.fliped(), 0.61
-                    if allow_back(match, backing_side, self, prob):
-                        return backing_side, prob
-                return False
-        return True
-
-    def extra_condition(self, match, set_opener_side, losstie_side):
-        if self.setname == "decided":
-            if losstie_side != set_opener_side:
-                return False
-        elif self.setname == "second":
-            tiewin_side = losstie_side.fliped()
-            tiewin_pid = (
-                match.first_player.ident
-                if tiewin_side == co.LEFT
-                else match.second_player.ident
-            )
-            sv = set2_after_set1loss_stat.read_player_sized_value(
-                match.sex, "set2win_after_set1win", tiewin_pid
-            )
-            if (
-                sv
-                and sv.size > 20
-                and (sv.value + 0.03) < set2_after_set1loss_stat.read_generic_value(
-                    match.sex, "set2win_after_set1win")
-            ):
-                log.info(
-                    "{} reject {} by set2win_after_set1win {}".format(
-                        self.__class__.__name__, match.name, sv.value
-                    )
-                )
-                return False
-        fst_chance = match.first_player_bet_chance()
-        if fst_chance is not None:
-            wintie_side_chance = (
-                fst_chance if losstie_side == co.RIGHT else (1.0 - fst_chance)
-            )
-            if wintie_side_chance < 0.49:
-                return False  # we avoid backing underdog here
+                    opener_has_begin_adv)
         return True
 
 
@@ -551,24 +380,23 @@ class AlertSet2WinClf(AlertSet):
                 return False  # we are late
             if inset == (0, 0):
                 backing_side, prob = clf_secondset_00.match_has_min_proba(
-                    match, set_opener_side
-                )
+                    match, set_opener_side)
                 if backing_side is None:
                     return False
                 allow_res = allow_back(match, backing_side, self, prob)
                 is_tieaff = tieloss_affect_side(
                         match, setnum=2, check_side=backing_side) == backing_side
                 if not allow_res or is_tieaff:
-                    comment = allow_res.comment
-                    if is_tieaff:
-                        comment += ' ' + 'tieaff'
-                    log.info(
-                        f"{self.__class__.__name__} rejected {match.name}"
-                        f" back: {backing_side} {comment}"
-                    )
+                    ignored = str(allow_res) not in ('recently_won_h2h', 'absence')
+                    comment = final_comment(
+                        str(allow_res), 'tieaff' if is_tieaff else '',
+                        "ignored" if ignored else "")
+                    log.info(f"{self.__class__.__name__} {match.name}"
+                             f" our: {backing_side} {comment}")
                     predicts_db.write_rejected(
                         match, self.case_name(), backing_side, reason=comment)
-                    return False
+                    if not ignored:
+                        return False
                 return backing_side, prob
         return True
 
@@ -838,18 +666,166 @@ class AlertScEqualSetend(AlertScEqual):
         return None  # disable
 
 
+@dataclass
+class CacheCell:
+    value: Optional[float] = field(default=None, init=False, repr=False)
+
+    def is_skip(self):
+        return self.value == float('inf')
+
+    def set_skip(self):
+        self.value = float('inf')
+
+    def set_value(self, value: float):
+        self.value = value
+
+
+@dataclass
+class CachePairCell:
+    left: CacheCell
+    right: CacheCell
+
+    def __getitem__(self, index):
+        if index == 0:
+            return self.left
+        elif index == 1:
+            return self.right
+        else:
+            raise ValueError(f'invalid index {index} for CachePairCell')
+
+    def set_skip_all(self):
+        self.left.set_skip()
+        self.right.set_skip()
+
+
+class AlertSc35Srv(AlertSc):
+    # check weak for opponent at 5-4:
+
+    def __init__(
+        self,
+        setname: str,
+        srv_side: Side,
+        max_lay_ratio: float,  # oppo srv on match (5:4) ratio
+        min_size: int,
+        max_oppo_rank_adv_dif: int,
+    ):
+        super().__init__(
+            setname=setname,
+            insetscore=(3, 5) if srv_side.is_left() else (5, 3),
+            srv_side=srv_side,
+            back_srv=True,
+        )
+        self.max_lay_ratio = max_lay_ratio
+        self.min_size = min_size
+        self.max_oppo_rank_adv_dif = max_oppo_rank_adv_dif
+        self.cache_idx = 0 if srv_side.is_left() else 1
+
+    def get_feat_name(self):
+        if self.setname == 'decided':
+            return f"{self.setname}_onmatch_srv"
+        return f"{self.setname}_onset_srv"
+
+    def back_side(self, trg_srv_side: Side) -> Side:
+        return trg_srv_side
+
+    def current_score_targeted(self, match: LiveMatch):
+        if self.srv_side.is_left():
+            return match.score[-1] == self.insetscore and match.left_service
+        return match.score[-1] == self.insetscore and match.left_service is False
+
+    def _back_has_chances(self, match):
+        """ return (flag, proba) where flag: has adv. Possible returns:
+            (True, proba: float) - exist adv,
+            (False, None) - not exist adv, thresholds are not implemented,
+            (None, None) - not found features, or < min_size data.
+            Эта реализация интересуется srv hold оппонента который будет подавть на матч.
+            proba берется грубо как 1 - oppo_onmatch_hold_ratio
+        """
+        try:
+            feat = feature.player_feature(match.features, self.get_feat_name(),
+                                          is_first=self.srv_side.fliped().is_left())
+            if feat.value.size < self.min_size:
+                return None, None
+        except cco.FeatureError:
+            return None, None
+        if feat.value.value <= self.max_lay_ratio:
+            srfrnkcmp = match.get_ranks_cmp(rtg_name="elo_alt", is_surface=True)
+            oppo_side = self.srv_side.fliped()
+            if not srfrnkcmp.side_prefer(oppo_side, self.max_oppo_rank_adv_dif):
+                proba = (1 - feat.value.value)
+                return True, proba
+        return False, None
+
+    def _condition_common(self, match: LiveMatch):
+        """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""
+        trg_srv_side = super()._condition_common(match)
+        if trg_srv_side in (co.LEFT, co.RIGHT):
+            cache_pair = match.get_cache_value(self.get_feat_name())
+            if cache_pair is None:
+                # need init in match
+                cache_pair = CachePairCell(CacheCell(), CacheCell())
+                match.set_cache_value(self.get_feat_name(), cache_pair)
+            if cache_pair[self.cache_idx].is_skip():
+                return False
+
+            scr = match.score[-1]
+            if max(scr) >= 5 and min(scr) <= 2:
+                cache_pair.set_skip_all()
+                return False  # only through 3:4 or 4:3 admited
+            cache_cell = cache_pair[self.cache_idx]
+            if cache_cell.value is None:
+                # need init in cell (probability or skip)
+                is_adv, proba = self._back_has_chances(match)
+                if not is_adv:
+                    cache_cell.set_skip()
+                    return False
+                else:
+                    cache_cell.set_value(proba)
+        return trg_srv_side
+
+    def _condition_now(self, match: LiveMatch, trg_srv_side: Side):
+        """Analyze current match state.
+        Return back side (if fired), False (if gone), True (if attention)"""
+        if self.current_score_targeted(match) and match.ingame in (None, ("0", "0")):
+            backing_side = self.back_side(trg_srv_side)
+            cache_pair = match.get_cache_value(self.get_feat_name())
+            if cache_pair is None:
+                log.warn(
+                    f"{self.case_name()} cache NOT INITED {match.name}"
+                    f" trg_srv_side:{trg_srv_side}")
+                return False
+            cache_cell = cache_pair[self.cache_idx]
+            if cache_cell.is_skip():
+                log.warn(
+                    f"{self.case_name()} cache TO SKIP IDX {self.cache_idx}"
+                    f" {match.name} trg_srv_side:{trg_srv_side}")
+                return False
+            if cache_cell.value is None:
+                log.warn(
+                    f"{self.case_name()} cache NONE IDX {self.cache_idx}"
+                    f" {match.name} trg_srv_side:{trg_srv_side}")
+                return False
+
+            proba = cache_cell.value
+            predicts_db.write_predict(match, self.case_name(), backing_side, proba)
+            if self.setname == 'open':
+                return False  # experimental mode, collect virt. results
+            return backing_side, proba
+
+    def _condition_next(self, match, trg_srv_side):
+        """Analyze for next game from current match state.
+        Return back side (if fired), False (if gone), True (if attention)"""
+        return None  # disable
+
+
 class AlertScEqualTieRatio(AlertScEqual):
     def __init__(
         self,
         setname: str,
-        max_rating: int,
-        max_dif_rating: int,
-        min_proba: float,
-        max_lay_ratio,
-        min_size: int,
+        max_surf_rank_dif: int,
+        adv_side_funs,
     ):
         super().__init__(setname=setname, insetscore=(6, 6), back_srv=None)
-        self.rtg_side_cond = ratings.SideCondition(max_rating, max_dif_rating)
 
         if setname == "open":
             self.plr_feature_name = "s1_tie_ratio"
@@ -858,14 +834,20 @@ class AlertScEqualTieRatio(AlertScEqual):
         else:
             raise co.TennisError("unexpected setname {}".format(setname))
 
-        self.min_proba = min_proba  # it is 'mixed' proba
-        self.max_lay_ratio = max_lay_ratio
-        self.min_back_ratio = 0.5
-        self.min_size = min_size
-        self.max_oppo_rank_adv_dif = 60
+        self.adv_side_funs = adv_side_funs
+        self.max_surf_rank_dif = max_surf_rank_dif
+
+    def case_name(self):
+        return f"{self.setname}_66"
 
     def get_feature_name(self, match):
         return self.plr_feature_name
+
+    def get_adv_side(self, fst_sv, snd_sv):
+        for adv_side_f in self.adv_side_funs:
+            r = adv_side_f(fst_sv, snd_sv)
+            if r in (co.LEFT, co.RIGHT):
+                return r
 
     def sized_values(self, match):
         try:
@@ -887,20 +869,18 @@ class AlertScEqualTieRatio(AlertScEqual):
             raise co.TennisError("unexpect back_side '{}'".format(back_side))
         return f"BK{back_sval} OP{opp_sval}"
 
-    def get_backside_proba(self, match):
+    def get_backside_proba(self, match) -> Tuple[Optional[Side], Optional[float]]:
         sv1, sv2 = self.sized_values(match)
-        if sv1.size < self.min_size or sv2.size < self.min_size:
+        adv_side = self.get_adv_side(sv1, sv2)
+        if adv_side in (co.LEFT, co.RIGHT):
             return None, None
-        proba1, proba2 = co.twoside_values(sv1, sv2)
-        if proba1 < self.min_proba and proba2 < self.min_proba:
-            return None, None
+        # very rough probability estimation:
+        estim_proba1 = sv1.value if adv_side.is_left() else sv2.value
+        estim_proba2 = sv2.value if adv_side.is_left() else sv1.value
         srfrnkcmp = match.get_ranks_cmp(rtg_name="elo_alt", is_surface=True)
         if (
-            proba1 >= self.min_proba
-            and sv1.value >= self.min_back_ratio
-            and sv2.value <= self.max_lay_ratio
-            and self.rtg_side_cond.condition(match, co.LEFT)
-            and not srfrnkcmp.side_prefer(co.RIGHT, self.max_oppo_rank_adv_dif)
+            adv_side.is_left()
+            and not srfrnkcmp.side_prefer(co.RIGHT, self.max_surf_rank_dif)
             and (
                 self.setname == "decided"
                 or tieloss_affect_stat.is_player_affect_above_avg(
@@ -909,13 +889,10 @@ class AlertScEqualTieRatio(AlertScEqual):
                 is False
             )
         ):
-            return co.LEFT, proba1
+            return co.LEFT, estim_proba1
         if (
-            proba2 >= self.min_proba
-            and sv2.value >= self.min_back_ratio
-            and sv1.value <= self.max_lay_ratio
-            and self.rtg_side_cond.condition(match, co.RIGHT)
-            and not srfrnkcmp.side_prefer(co.LEFT, self.max_oppo_rank_adv_dif)
+            adv_side.is_right()
+            and not srfrnkcmp.side_prefer(co.LEFT, self.max_surf_rank_dif)
             and (
                 self.setname == "decided"
                 or tieloss_affect_stat.is_player_affect_above_avg(
@@ -924,7 +901,7 @@ class AlertScEqualTieRatio(AlertScEqual):
                 is False
             )
         ):
-            return co.RIGHT, proba2
+            return co.RIGHT, estim_proba2
 
     def _condition_common(self, match: LiveMatch):
         """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""
@@ -1025,9 +1002,8 @@ def admit_total_matched_back_coef(market_name, sex, total_matched, back_coef):
 
 
 def get_market_name(match, alert):
-    if isinstance(alert, AlertSetAfterTieAffect):
-        if match.score and match.score.sets_count(full=True) == 1:
-            return SET_WINNER_MARKET_NAME
+    if match.score and match.score.sets_count(full=True) == 1:
+        return SET_WINNER_MARKET_NAME
     return DEFAULT_MARKET_NAME
 
 
@@ -1061,7 +1037,7 @@ def allow_current_coefs(match, alert, backing_side, prob=None):
 
 class AllowBackResult:
     def __init__(self, code: bool, comment: str):
-        self.code = code
+        self.code = code  # allow if bool(code) == True
         self.comment = comment
 
     def __bool__(self):
@@ -1076,13 +1052,6 @@ class AllowBackResult:
 
 def allow_back(match, backing_side, alert, prob, case_name=None) -> AllowBackResult:
     if backing_side.is_oppose(match.recently_won_h2h_side()):
-        log.info(
-            "{} rejected by recently_won_h2h_side {} {}".format(
-                alert.__class__.__name__,
-                backing_side.fliped(),
-                match.tostring(extended=True),
-            )
-        )
         return AllowBackResult(False, 'recently_won_h2h')
 
     is_retired = feature.is_player_feature(
@@ -1090,37 +1059,17 @@ def allow_back(match, backing_side, alert, prob, case_name=None) -> AllowBackRes
     is_absence = feature.is_player_feature(
         match.features, "absence", is_first=backing_side.is_left())
     if is_retired or is_absence:
-        log.info(
-            f"{alert.__class__.__name__} rejected by ret/abs "
-            f"back {backing_side} {match.tostring(extended=True)}")
         return AllowBackResult(False, 'retired' if is_retired else 'absence')
 
     if backing_side.is_oppose(match.last_res_advantage_side()):
-        log.info(
-            "{} rejected by last_results_side {} {}".format(
-                alert.__class__.__name__,
-                backing_side.fliped(),
-                match.tostring(extended=True),
-            )
-        )
         return AllowBackResult(False, 'last_results')
 
     if prob is not None and prob < 0.75:
         vs_incomer_adv_side = match.vs_incomer_advantage_side()
         if backing_side.is_oppose(vs_incomer_adv_side):
-            log.info(
-                "{} rejected by vs_incomer_adv_side {}".format(
-                    alert.__class__.__name__, match.tostring(extended=True)
-                )
-            )
             return AllowBackResult(False, 'vs_incomer')
 
     if back_in_blacklist(match, backing_side, case_name):
-        log.info(
-            "{} rejected by blacklist {}".format(
-                alert.__class__.__name__, match.tostring()
-            )
-        )
         return AllowBackResult(False, 'blacklist')
 
     return AllowBackResult(True, '')
@@ -1134,8 +1083,21 @@ def back_in_blacklist(match, backing_side: Side, case_name=None):
 
 
 back_in_blacklist.blacknames_dct = {
-    ("wta", None): [],
-    ("atp", None): [],
+    ("wta", None): [
+        "Kyoka Okamura",
+        "Josephine Boualem",
+        "Tamara Curovic",
+        "Elena Bogdan",
+    ],
+    ("atp", None): [
+        "Thomaz Bellucci",
+        "Marek Gengel",
+        "Andrew Whittington",
+        "Pierre Faivre",
+        "Santiago Gonzalez",
+        # low motivation:
+        "Bernard Tomic",
+    ],
     ("atp", "decided_00"): [],
     ("wta", "decided_00"): [],
 }

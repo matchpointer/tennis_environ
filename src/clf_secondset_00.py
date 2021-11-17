@@ -347,7 +347,6 @@ def fill_data(
     split: Optional[bool],
     is_shuffle: bool = False,
     random_state: int = 0,
-    use_storage: bool = False,
 ):
     vrnt_key = variant.key
     df0 = read_df(variant, subname="main")
@@ -365,7 +364,6 @@ def fill_data(
         split,
         test_size=DEFAULT_TEST_SIZE,
         eval_size=DEFAULT_EVAL_SIZE,
-        storage_dir=cco.persist_dirname(MODEL, vrnt_key) if use_storage else "",
         feature_names=variant.feature_names.get_list(),
         label_name=LABEL_NAME,
         other_names=(vrnt_key.get_stratify_names(is_text_style=False)),

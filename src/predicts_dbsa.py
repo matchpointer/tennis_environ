@@ -27,6 +27,8 @@ import common as co
 metadata = MetaData()
 
 
+MAX_COMMENTS_LEN = 36
+
 predicts_table = Table(
     "predicts",
     metadata,
@@ -41,13 +43,14 @@ predicts_table = Table(
     Column("oppo_id", Integer),
     Column("predict_proba", Float),
     Column("predict_result", Integer),
-    Column("comments", String(36)),
+    Column("comments", String(MAX_COMMENTS_LEN)),
     Column("back_name", String(40)),
     Column("oppo_name", String(40)),
     Column("book_start_chance", Float),
     Column("rejected", Integer),
     Column("back_win_match", Integer),
     Column("bf_live_coef", Float),
+    Column("bf_live_coef_matched", Float),
     PrimaryKeyConstraint("sex", "date", "case_name", "rnd", "back_id", "oppo_id"),
 )
 
@@ -58,7 +61,8 @@ class PredictRec:
                  predict_proba: float, predict_result: int, comments: str,
                  back_name: str, oppo_name: str,
                  book_start_chance: float, rejected: int = -1,
-                 back_win_match: int = -1, bf_live_coef: float = None
+                 back_win_match: int = -1, bf_live_coef: float = None,
+                 bf_live_coef_matched: float = None
                  ):
         self.sex = sex
         self.date = date
@@ -78,6 +82,7 @@ class PredictRec:
         self.rejected = rejected
         self.back_win_match = back_win_match
         self.bf_live_coef = bf_live_coef
+        self.bf_live_coef_matched = bf_live_coef_matched
 
     def get_predict_result(self):
         return co.PredictResult(self.predict_result)
@@ -133,6 +138,7 @@ mapper(
         "rejected": predicts_table.c.rejected,
         "back_win_match": predicts_table.c.back_win_match,
         "bf_live_coef": predicts_table.c.bf_live_coef,
+        "bf_live_coef_matched": predicts_table.c.bf_live_coef_matched,
     },
 )
 

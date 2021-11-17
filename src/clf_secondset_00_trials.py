@@ -76,7 +76,6 @@ def final_train_save(variant: cco.Variant, seed: int, random_state: int):
         split=None,
         is_shuffle=args.shuffle,
         random_state=random_state,
-        use_storage=False,
     )
     variant.make_clf_fit(data, metric_name, random_seed=seed)
     variant.save_clf(model_name=MODEL, metric_name=metric_name)
@@ -105,7 +104,6 @@ def random_train(variant, msg="", split=True, plot=False):
                 split=split,
                 is_shuffle=args.shuffle,
                 random_state=random_state,
-                use_storage=False,
             )
             clf = variant.make_clf_fit(data, metric_name, random_seed=seed, plot=plot)
             name_imp = variant.get_features_importance(variant.feature_names.get_list())
@@ -219,7 +217,6 @@ if __name__ == "__main__":
             split=variant.is_cb_native(),
             is_shuffle=args.shuffle,
             random_state=random_state,
-            use_storage=False,
         )
         hp_search(
             variant,

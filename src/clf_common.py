@@ -277,141 +277,6 @@ class LevSurf:
 
 q_rounds = ["q-First", "q-Second", "Qualifying"]
 
-key_all = LevSurf(
-    name="all",
-    levels=None,
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["team", "teamworld", "feature"]))
-        | (d["rnd_text"] == "Rubber")
-        | ((d["level_text"] == "chal") & (d["rnd_text"].isin(q_rounds)))
-    ),
-    skip_match_cond=(
-        lambda m: m.level in ["team", "teamworld"]
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "level", "rnd"],
-)
-
-key_all_rtg350_250 = LevSurf(
-    name="all_rtg350_250",
-    levels=None,
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["team", "teamworld", "feature"]))
-        | (d["rnd_text"] == "Rubber")
-        | ((d["level_text"] == "chal") & (d["rnd_text"].isin(q_rounds)))
-        | (d["fst_std_rank"] > 350)
-        | (d["snd_std_rank"] > 350)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 250)
-    ),
-    skip_match_cond=(
-        lambda m: m.level in ["team", "teamworld"]
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "level", "rnd"],
-)
-
-key_all_rtg300_200 = LevSurf(
-    name="all_rtg300_200",
-    levels=None,
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["team", "teamworld", "feature"]))
-        | (d["rnd_text"] == "Rubber")
-        | ((d["level_text"] == "chal") & (d["rnd_text"].isin(q_rounds)))
-        | (d["fst_std_rank"] > 300)
-        | (d["snd_std_rank"] > 300)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 200)
-    ),
-    skip_match_cond=(
-        lambda m: m.level in ["team", "teamworld"]
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "level", "rnd"],
-)
-
-key_all_rtg250_180 = LevSurf(
-    name="all_rtg250_180",
-    levels=None,
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["team", "teamworld", "feature"]))
-        | (d["rnd_text"] == "Rubber")
-        | ((d["level_text"] == "chal") & (d["rnd_text"].isin(q_rounds)))
-        | (d["fst_std_rank"] > 250)
-        | (d["snd_std_rank"] > 250)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 180)
-    ),
-    skip_match_cond=(
-        lambda m: m.level in ["team", "teamworld"]
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "level", "rnd"],
-)
-
-key_all_rtg200_150 = LevSurf(
-    name="all_rtg200_150",
-    levels=None,
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["team", "teamworld", "feature"]))
-        | (d["rnd_text"] == "Rubber")
-        | ((d["level_text"] == "chal") & (d["rnd_text"].isin(q_rounds)))
-        | (d["fst_std_rank"] > 200)
-        | (d["snd_std_rank"] > 200)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 150)
-    ),
-    skip_match_cond=(
-        lambda m: m.level in ["team", "teamworld"]
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "level", "rnd"],
-)
-
-key_chal = LevSurf(
-    name="chal",
-    levels=["chal"],
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["qual", "main", "team", "teamworld", "feature"]))
-        | d["rnd_text"].isin(q_rounds)
-    ),
-    skip_match_cond=(
-        lambda m: m.level != "chal"
-        or (m.rnd is not None and m.rnd.qualification())
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "rnd"],
-)
-
-key_chal_rtg300_200 = LevSurf(
-    name="chal_rtg300_200",
-    levels=["chal"],
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["qual", "main", "team", "teamworld", "feature"]))
-        | d["rnd_text"].isin(q_rounds)
-        | (d["fst_std_rank"] > 300)
-        | (d["snd_std_rank"] > 300)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 200)
-    ),
-    skip_match_cond=(
-        lambda m: m.level != "chal"
-        or (m.rnd is not None and m.rnd.qualification())
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "rnd"],
-)
-
-key_main = LevSurf(
-    name="main",
-    levels=["main", "gs", "masters", "teamworld"],
-    surfaces=None,
-    drop_cond=lambda d: (d["level_text"].isin(["qual", "chal", "team", "feature"])),
-    skip_match_cond=lambda m: (m.level not in ["main", "gs", "masters", "teamworld"]),
-    stratify_names=["surface", "rnd"],
-)
 
 key_main_clr = LevSurf(
     name="main_clr",
@@ -419,8 +284,6 @@ key_main_clr = LevSurf(
     surfaces=None,
     drop_cond=lambda d: (
         (d["level_text"].isin(["qual", "chal", "team", "teamworld", "future"]))
-        # | (d['rnd_text'].isin(q_rounds))  # here strong qual in masters
-        # | (d['rnd_text'] == 'Robin')  # here strong Robin in masters (endeyar Finals)
         | (d["rnd_text"] == "Rubber")
     ),
     skip_match_cond=lambda m: (
@@ -436,55 +299,10 @@ key_main_clr_rtg350_250 = LevSurf(
     surfaces=None,
     drop_cond=lambda d: (
         (d["level_text"].isin(["qual", "chal", "team", "teamworld", "future"]))
-        |
-        # (d['rnd_text'].isin(q_rounds)) |  # here strong qual in masters
-        # (d['rnd_text'] == 'Robin') |  # here strong Robin in masters (endeyar Finals)
-        (d["rnd_text"] == "Rubber")
+        | (d["rnd_text"] == "Rubber")
         | (d["fst_std_rank"] > 350)
         | (d["snd_std_rank"] > 350)
         | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 250)
-    ),
-    skip_match_cond=lambda m: (
-        m.level in ["qual", "chal", "team", "teamworld", "future"]
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "rnd"],
-)
-
-key_main_clr_rtg300_200 = LevSurf(
-    name="main_clr_rtg300_200",
-    levels=["main", "gs", "masters"],
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["qual", "chal", "team", "teamworld", "future"]))
-        |
-        # (d['rnd_text'].isin(q_rounds)) |  # here strong qual in masters
-        # (d['rnd_text'] == 'Robin') |  # here strong Robin in masters (endeyar Finals)
-        (d["rnd_text"] == "Rubber")
-        | (d["fst_std_rank"] > 300)
-        | (d["snd_std_rank"] > 300)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 200)
-    ),
-    skip_match_cond=lambda m: (
-        m.level in ["qual", "chal", "team", "teamworld", "future"]
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["surface", "rnd"],
-)
-
-key_main_clr_rtg250_180 = LevSurf(
-    name="main_clr_rtg250_180",
-    levels=["main", "gs", "masters"],
-    surfaces=None,
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["qual", "chal", "team", "teamworld", "future"]))
-        |
-        # (d['rnd_text'].isin(q_rounds)) |  # here strong qual in masters
-        # (d['rnd_text'] == 'Robin') |  # here strong Robin in masters (endeyar Finals)
-        (d["rnd_text"] == "Rubber")
-        | (d["fst_std_rank"] > 250)
-        | (d["snd_std_rank"] > 250)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 180)
     ),
     skip_match_cond=lambda m: (
         m.level in ["qual", "chal", "team", "teamworld", "future"]
@@ -499,10 +317,7 @@ key_main_clr_rtg200_150 = LevSurf(
     surfaces=None,
     drop_cond=lambda d: (
         (d["level_text"].isin(["qual", "chal", "team", "teamworld", "future"]))
-        |
-        # (d['rnd_text'].isin(q_rounds)) |  # here strong qual in masters
-        # (d['rnd_text'] == 'Robin') |  # here strong Robin in masters (endeyar Finals)
-        (d["rnd_text"] == "Rubber")
+        | (d["rnd_text"] == "Rubber")
         | (d["fst_std_rank"] > 200)
         | (d["snd_std_rank"] > 200)
         | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 150)
@@ -513,56 +328,6 @@ key_main_clr_rtg200_150 = LevSurf(
     ),
     stratify_names=["surface", "rnd"],
 )
-
-key_main_hard = LevSurf(
-    name="main_hard",
-    levels=["main", "gs", "masters"],
-    surfaces=["Hard"],
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["qual", "chal", "team", "teamworld", "feature"]))
-        | (d["surface_text"] != "Hard")
-    ),
-    skip_match_cond=lambda m: (
-        m.level not in ["main", "gs", "masters"] or m.surface != "Hard"
-    ),
-    stratify_names=["rnd"],
-)
-key_all_hard_rtg250_180 = LevSurf(
-    name="all_hard_rtg250_180",
-    levels=["main", "gs", "masters", "chal"],
-    surfaces=["Hard"],
-    drop_cond=lambda d: (
-        (d["level_text"].isin(["qual", "team", "teamworld", "feature"]))
-        | (d["surface_text"] != "Hard")
-        | (d["fst_std_rank"] > 250)
-        | (d["snd_std_rank"] > 250)
-        | ((d["fst_std_rank"] - d["snd_std_rank"]).abs() > 180)
-        | (d["rnd_text"].isin(q_rounds) & (d["level_text"] == "chal"))
-        | (d["rnd_text"] == "Rubber")
-    ),
-    skip_match_cond=lambda m: (
-        m.level not in ["main", "gs", "masters", "chal"]
-        or m.surface != "Hard"
-        or (m.level == "chal" and m.rnd is not None and m.rnd.qualification())
-        or (m.rnd is not None and m.rnd.rubber())
-    ),
-    stratify_names=["level", "rnd"],
-)
-
-key_main_qual_clr = LevSurf(
-    name="main_qual_clr",
-    levels=["main", "gs", "masters"],
-    surfaces=None,
-    drop_cond=lambda d: (
-        ~(d["raw_level_text"].isin(["main", "gs", "masters"]))
-        | ~(d["rnd_text"].isin(q_rounds))
-    ),
-    skip_match_cond=lambda m: (
-        m.level not in ["main", "gs", "masters"] or not m.rnd.qualification()
-    ),
-    stratify_names=["surface", "rnd"],
-)
-
 
 ProfitRatios = namedtuple("ProfitRatios", "pos_ratio neg_ratio")
 PosNeg = namedtuple("PosNeg", "pos neg")

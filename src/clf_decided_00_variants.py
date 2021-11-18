@@ -27,7 +27,6 @@ default_atp_feat_names = cco.FeatureNames(
 )
 
 
-
 var_atp_main_clr_1f = cco.Variant(
     sex="atp",
     suffix="1f",

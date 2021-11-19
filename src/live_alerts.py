@@ -870,13 +870,12 @@ class AlertScEqualTieRatio(AlertScEqual):
         return f"BK{back_sval} OP{opp_sval}"
 
     def get_backside_proba(self, match) -> Tuple[Optional[Side], Optional[float]]:
+        """ if returning side is not None,
+            then next tuple member is very rough probability estimation """
         sv1, sv2 = self.sized_values(match)
         adv_side = self.get_adv_side(sv1, sv2)
-        if adv_side in (co.LEFT, co.RIGHT):
+        if adv_side is None:
             return None, None
-        # very rough probability estimation:
-        estim_proba1 = sv1.value if adv_side.is_left() else sv2.value
-        estim_proba2 = sv2.value if adv_side.is_left() else sv1.value
         srfrnkcmp = match.get_ranks_cmp(rtg_name="elo_alt", is_surface=True)
         if (
             adv_side.is_left()
@@ -889,7 +888,7 @@ class AlertScEqualTieRatio(AlertScEqual):
                 is False
             )
         ):
-            return co.LEFT, estim_proba1
+            return co.LEFT, sv1.value
         if (
             adv_side.is_right()
             and not srfrnkcmp.side_prefer(co.LEFT, self.max_surf_rank_dif)
@@ -901,7 +900,8 @@ class AlertScEqualTieRatio(AlertScEqual):
                 is False
             )
         ):
-            return co.RIGHT, estim_proba2
+            return co.RIGHT, sv2.value
+        return None, None
 
     def _condition_common(self, match: LiveMatch):
         """co.LEFT, co.RIGHT (who will serve), False (gone), True (attention)"""

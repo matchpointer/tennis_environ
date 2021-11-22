@@ -5,7 +5,6 @@ from http.client import HTTPException
 from contextlib import closing
 import gzip
 import io
-import unittest
 
 import log
 import file_utils as fu
@@ -44,6 +43,13 @@ def default_mozilla_user_agent():
 
 def default_mozilla_headers():
     return {"User-Agent": default_mozilla_user_agent()}
+
+
+def oncourt_headers():
+    return {
+        "Accept": "text/html, */*",
+        "User-Agent": "Mozilla/3.0 (compatible; Indy Library)",
+    }
 
 
 def read_ziped(content):
@@ -111,30 +117,3 @@ class WebPage(object):
     def refresh(self):
         self.__random_sleep()
         self._content = fetch_url_wrap(url=self.url, headers=default_mozilla_headers())
-
-
-class TestPageFetch(unittest.TestCase):
-    def test_fetch_flashscore_personal(self):
-        name = "Carla Suarez-Navarro"
-        page = WebPage(
-            url="https://www.flashscore.com/player/suarez-navarro-carla/UsFrMhMr/"
-        )
-        content = page.content
-        self.assertTrue(content is not None)
-        self.assertTrue(isinstance(content, str))
-        if content is not None:
-            self.assertIn(name, content)
-            fu.single_write("../unit_test_data/navarro.html", content, encoding="utf-8")
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-    # # url = "http://flashscore.com/tennis/"
-    # headers = default_mozilla_headers()
-    # # headers['Cookie'] = 'clng=1'
-    # content = fetch_url_wrap("http://meduza.io", headers=default_mozilla_headers())
-    # if content:
-    #     r = read_ziped(content)
-    #     with open('./meduza.html', 'w') as fh:
-    #         fh.write(content)

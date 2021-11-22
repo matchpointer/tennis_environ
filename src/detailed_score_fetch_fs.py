@@ -4,7 +4,6 @@ import sys
 import datetime
 import time
 from collections import defaultdict
-import unittest
 import argparse
 import winsound
 
@@ -251,10 +250,8 @@ def parse_command_line_args():
 if __name__ == "__main__":
     args = parse_command_line_args()
     if not args.dayago1 and not args.dayago2:
-        log.initialize(
-            co.logname(__file__, test=True), file_level="info", console_level="info"
-        )
-        unittest.main()
+        print("use --dayago1, --dayago2")
+        sys.exit(1)
     else:
         log.initialize(co.logname(__file__), file_level="info", console_level="info")
         assert args.dayago1 <= args.dayago2, "daysago bad interval [{}, {}]".format(

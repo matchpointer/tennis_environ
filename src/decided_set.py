@@ -1,10 +1,8 @@
 import sys
 import os
 import datetime
-import unittest
 from collections import defaultdict, namedtuple
 import argparse
-import copy
 from contextlib import closing
 
 import log
@@ -26,7 +24,8 @@ MatchResult = namedtuple("MatchResult", "first_id second_id games_dif")
 # sex -> ordereddict{date -> list of MatchResult}
 results_dict = defaultdict(lambda: defaultdict(list))
 
-START_HISTORY_DATE = datetime.date(2014, 1, 1)
+# START_HISTORY_DATE = datetime.date(2014, 1, 1)
+START_HISTORY_DATE = datetime.date.today() - datetime.timedelta(days=365 * 3)
 
 
 def winloss_to_float(winloss):
@@ -192,37 +191,6 @@ def _initialize_results_sex(sex, min_date=None, max_date=None):
         dates.sort()
         for date in dates:
             results_dict[sex][date] = tmp_dct[date]
-
-
-class WinlossPlayerTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        max_date = datetime.date.today() - datetime.timedelta(days=7)
-        initialize_results(
-            sex="wta",
-            min_date=datetime.date(year=2013, month=1, day=1),
-            max_date=max_date,
-        )
-
-    def test_date_none(self):
-        self.assertFalse(None in list(results_dict["wta"].keys()))
-
-    def test_date_order(self):
-        dates = copy.copy(list(results_dict["wta"].keys()))
-        dates2 = copy.copy(dates)
-        dates2.sort()
-        self.assertEqual(dates2, dates)
-
-    def test_player_winloss(self):
-        sharapova = 503
-        wl = player_winloss(sex="wta", ident=sharapova)
-        self.assertTrue(wl.ratio > 0.65)
-        self.assertTrue(wl.size > 10)
-
-        serenawilliams = 241
-        wl = player_winloss(sex="wta", ident=serenawilliams)
-        self.assertTrue(wl.ratio > 0.65)
-        self.assertTrue(wl.size > 8)
 
 
 class DecidedSetPlayersProcessor(object):
@@ -409,8 +377,3 @@ if __name__ == "__main__":
         import make_stat
 
         sys.exit(do_stat(sex=None if args.sex == "both" else args.sex))
-    else:
-        dba.open_connect()
-        unittest.main()
-        dba.close_connect()
-        sys.exit(0)

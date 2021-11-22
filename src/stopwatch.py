@@ -25,7 +25,6 @@ mult in 1.38282775879e-05 sec
 
 import time
 import datetime
-import unittest
 
 
 class Timer(object):
@@ -142,15 +141,3 @@ class PointTimer(OverTimer):
     def restart(self):
         """Starts again is disallowed."""
         raise NotImplementedError("PointTimer can has not restart")
-
-
-class PointTimerTest(unittest.TestCase):
-    def test_initialy_passed(self):
-        ptimer = PointTimer(
-            datetime.datetime(year=2017, month=9, day=25, hour=8, minute=40)
-        )
-        self.assertTrue(ptimer.overtime())
-
-
-if __name__ == "__main__":
-    unittest.main()

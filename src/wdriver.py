@@ -3,7 +3,6 @@
     geckodriver.exe 64bit (firefox) from https://github.com/mozilla/geckodriver/releases
 """
 import time
-import unittest
 from contextlib import contextmanager
 
 from enum import IntEnum
@@ -193,14 +192,3 @@ def log_element(element, head_msg=""):
         log.info(head_msg)
     log.info(str(element.get_attribute("innerHTML")))
 
-
-if __name__ == "__main__":
-    log.initialize(
-        co.logname(__file__, test=True), file_level="info", console_level="info"
-    )
-    #   drv = start()
-    #   time.sleep(10)
-    #   load_url(drv, "http://meduza.io")
-    #   time.sleep(20)
-    #   stop(drv)
-    unittest.main()

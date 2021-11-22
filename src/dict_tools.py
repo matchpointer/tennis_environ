@@ -1,29 +1,11 @@
 import os
 import re
-from collections import Counter, defaultdict, OrderedDict, namedtuple
+from collections import Counter, OrderedDict, namedtuple
 from operator import itemgetter
 import functools
-import unittest
 
-import log
 import common as co
 import report_line as rl
-import stat_cont as st
-
-
-class OrderedDefaultDictTest(unittest.TestCase):
-    def test_simple(self):
-        dct = defaultdict(list)
-        dct["x"].append(1)
-        dct["b"].append(2)
-        dct["x"].append(11)
-        dct["c"].append(3)
-        val = dct["zzz"]
-        self.assertEqual([], val)
-        self.assertEqual(["x", "b", "c", "zzz"], list(dct.keys()))
-        self.assertEqual([[1, 11], [2], [3], []], list(dct.values()))
-        del dct["x"]
-        self.assertEqual(["b", "c", "zzz"], list(dct.keys()))
 
 
 default_sep = "_"
@@ -75,6 +57,11 @@ def load(filename, createfun=None, keyfun=None, valuefun=None, filterfun=None):
     каждая пара ключ-значение восстанавливается из одной отдельной строки
     filterfun применяется после keyfun, valuefun к key, value and skip item if False.
     """
+    from common import Struct, StructKey
+    from report_line import SizedValue, ReportLine
+    from stat_cont import Sumator, WinLoss
+    from tennis import Round, Surface, Level
+    from score import Score
 
     keyloadfun = keyfun if keyfun is not None else eval
     valueloadfun = valuefun if valuefun is not None else eval
@@ -156,107 +143,6 @@ def filter_value_size_fun(min_size):
 LevSurf = namedtuple("LevSurf", "level surface")
 
 
-class DictPersistTest(unittest.TestCase):
-    def test_namedtuple_counter_dict(self):
-        def make_tuple_counter_dict():
-            result = dict()
-            result[()] = Counter(dict([(-444, 222), (-222, 111)]))
-            result[("main",)] = Counter(dict([(-44, 22), (-22, 11)]))
-            result[("main", "Clay")] = Counter(dict([(-4, 2), (-2, 1)]))
-            result[("masters", "Clay")] = Counter(dict([(-3, 4), (-2, 2)]))
-            return result
-
-        self.dump_load_test_impl(
-            dictionary=make_tuple_counter_dict(),
-            filename="./utest_tuple_counter_dict.txt",
-        )
-
-        def make_namedtuple_counter_dict():
-            result = dict()
-            result[LevSurf(level="main", surface="Hard")] = "This is text"
-            result[LevSurf(level="main", surface="Clay")] = Counter(
-                dict([(-4, 2), (-2, 1)])
-            )
-            result[LevSurf(level="masters", surface="Clay")] = Counter(
-                dict([(-3, 4), (-2, 2)])
-            )
-            return result
-
-        self.dump_load_test_impl(
-            dictionary=make_namedtuple_counter_dict(),
-            filename="./utest_namedtuple_counter_dict.txt",
-        )
-
-    def test_structkey_counter_dict(self):
-        def make_structkey_counter_dict():
-            result = dict()
-            result[co.StructKey(level="main", surface="Clay")] = Counter(
-                dict([(-4, 2), (-2, 1)])
-            )
-            result[co.StructKey(level="masters", surface="Clay")] = Counter(
-                dict([(-3, 4), (-2, 2)])
-            )
-            result[co.StructKey(level="main", rnd="First")] = Counter(
-                dict([(-1, 4), (0, 5)])
-            )
-            result[co.StructKey(level="chal", surface="Grass", rnd="1/4")] = Counter(
-                dict([(2, 12), (-1, 48)])
-            )
-            return result
-
-        self.dump_load_test_impl(
-            dictionary=make_structkey_counter_dict(),
-            filename="./utest_structkey_counter_dict.txt",
-        )
-
-    def test_structkey_winloss_dict(self):
-        def make_structkey_winloss_dict():
-            result = dict()
-            result[co.StructKey(surface="Hard", level="main")] = st.WinLoss(999, 1)
-            result[co.StructKey(level="masters", surface="Clay")] = st.WinLoss(70, 30)
-            result[co.StructKey(level="main", rnd="First")] = st.WinLoss(66, 34)
-            result[co.StructKey(level="chal", surface="Grass", rnd="1/4")] = st.WinLoss(
-                0, 100
-            )
-            return result
-
-        self.dump_load_test_impl(
-            dictionary=make_structkey_winloss_dict(),
-            filename="./utest_structkey_winloss_dict.txt",
-        )
-
-    def test_struct_winloss_dict(self):
-        def make_struct_winloss_dict():
-            result = dict()
-            result[co.Struct()] = st.WinLoss(9999, 1)
-            result[co.Struct(surface="Hard", level="main")] = st.WinLoss(999, 1)
-            result[co.Struct(level="masters", surface="Clay")] = st.WinLoss(70, 30)
-            result[co.Struct(level="main", rnd="First")] = st.WinLoss(66, 34)
-            result[co.Struct(level="chal", surface="Grass", rnd="1/4")] = st.WinLoss(
-                0, 100
-            )
-            return result
-
-        self.dump_load_test_impl(
-            dictionary=make_struct_winloss_dict(),
-            filename="./utest_struct_winloss_dict.txt",
-        )
-
-    def test_empty_dict(self):
-        self.dump_load_test_impl(dictionary={}, filename="./utest_empty_dict.txt")
-
-    def dump_load_test_impl(self, dictionary, filename):
-        if os.path.isfile(filename):
-            os.remove(filename)
-        dump(dictionary, filename)
-        dictionary_loaded = load(filename)
-        self.assertEqual(dictionary, dictionary_loaded)
-        for val in dictionary_loaded.values():
-            if isinstance(val, (bytes, str)):
-                self.assertTrue(isinstance(val, str))
-        os.remove(filename)
-
-
 def value_pos(filename, key, keyfun=None, valuefun=None):
     """найти в файле указанный ключ и вернуть пару (value, Position in file)"""
     dct = load(filename, createfun=OrderedDict, keyfun=keyfun, valuefun=valuefun)
@@ -317,8 +203,3 @@ def get_items(dictionary, key_predicate=lambda k: True, value_predicate=lambda v
         for (key, value) in list(dictionary.items())
         if key_predicate(key) and value_predicate(value)
     ]
-
-
-if __name__ == "__main__":
-    log.initialize(co.logname(__file__, test=True), "debug", None)
-    unittest.main()

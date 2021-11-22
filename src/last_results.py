@@ -1,7 +1,5 @@
 import datetime
-import unittest
 
-import common as co
 import stat_cont as st
 import tennis_time as tt
 import weeked_tours
@@ -30,7 +28,7 @@ class LastResults(object):
         iswins_len = len(iswins)
         if iswins_len >= min_size:
             for size in range(min_size, iswins_len + 1):
-                wl = st.WinLoss.create_from_iter(iswins[0:size])
+                wl = st.WinLoss.from_iter(iswins[0:size])
                 if wl.ratio >= min_ratio:
                     return True
         return False
@@ -44,7 +42,7 @@ class LastResults(object):
         iswins_len = len(iswins)
         if iswins_len >= min_size:
             for size in range(min_size, iswins_len + 1):
-                wl = st.WinLoss.create_from_iter(iswins[0:size])
+                wl = st.WinLoss.from_iter(iswins[0:size])
                 if wl.ratio >= min_ratio and wl.ratio > best_ratio:
                     best_ratio = wl.ratio
         return best_ratio
@@ -122,90 +120,3 @@ class LastResults(object):
                         continue
                     results.append(match.first_player.ident == player_id)
         return results
-
-
-class WinstreakAdvTest(unittest.TestCase):
-    def test_winstreak_adv(self):
-        # simulate Wang - Davis 2019.09.22
-        wang_lr = LastResults.from_week_results(
-            [[], [False, True, True, True], [False], [], [False], [False]]
-        )
-        davis_lr = LastResults.from_week_results(
-            [[True, True], [], [], [False, True, True, True], [False, True], []]
-        )
-        self.assertFalse(wang_lr.poor_practice())
-        self.assertFalse(wang_lr.last_weeks_empty(weeks_num=3))
-
-        self.assertFalse(davis_lr.poor_practice())
-        self.assertFalse(davis_lr.last_weeks_empty(weeks_num=3))
-
-    def test_winstreak_adv2(self):
-        # simulate Caroline Garcia - Anna Blinkova 2019.05.30
-        garcia_lr = LastResults.from_week_results(
-            [
-                [True],
-                [False, True, True, True, True],
-                [False],
-                [False, True, True],
-                [],
-                [False],
-            ]
-        )
-        blinkova_lr = LastResults.from_week_results(
-            [
-                [True, True, True, True],
-                [],
-                [False, True, True, True, True],
-                [False, True],
-                [False, True, True, True],
-                [False, True],
-            ]
-        )
-
-        fst_ratio = garcia_lr.best_win_streak_ratio(min_ratio=0.777, min_size=8)
-        snd_ratio = blinkova_lr.best_win_streak_ratio(min_ratio=0.777, min_size=8)
-        adv_side = None
-        if fst_ratio and fst_ratio > (snd_ratio + 0.2):
-            adv_side = co.LEFT
-        if not fst_ratio and snd_ratio > (fst_ratio + 0.2):
-            adv_side = co.RIGHT
-
-        self.assertTrue(adv_side is not None)
-
-
-def _special_case_test():
-    import oncourt_players
-    import dba
-
-    dba.open_connect()
-    oncourt_players.initialize(yearsnum=1.2)
-
-    date = tt.past_monday_date(datetime.date.today())
-
-    sex = "atp"
-    hist_weeks_len = 6
-    weeked_tours.initialize_sex(
-        sex,
-        min_date=date - datetime.timedelta(days=7 * hist_weeks_len),
-        max_date=date + datetime.timedelta(days=11),
-        with_today=True,
-        with_paired=True,
-        with_bets=True,
-        with_stat=True,
-        rnd_detailing=True,
-    )
-
-    weeks_ago = 4
-
-    medvedev_id = 22807
-    pname = "medvedev"
-    last_res = LastResults(sex=sex, player_id=medvedev_id, weeks_ago=weeks_ago)
-    print(f"{pname} last_res:\n{last_res}")
-
-
-if __name__ == "__main__":
-    import log
-
-    log.initialize(co.logname(__file__), file_level="info", console_level="info")
-    _special_case_test()
-    # unittest.main()

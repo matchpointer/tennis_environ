@@ -1,5 +1,4 @@
 ﻿import sys
-import unittest
 from collections import OrderedDict, namedtuple
 if sys.version_info >= (3, 9):
     from collections import abc
@@ -724,8 +723,3 @@ def cumulate_to_prev_decided(
         calc.proc_set(setitems_dict[3])
         calc.proc_set(setitems_dict[4])
     res_features.extend(calc.result_features(prefix="sspd"))
-
-
-if __name__ == "__main__":
-    log.initialize(co.logname(__file__), file_level="info", console_level="info")
-    unittest.main()

@@ -3,7 +3,6 @@ from collections import namedtuple, defaultdict
 import copy
 import random
 import pickle
-import unittest
 from typing import Optional, List, Tuple
 from enum import Enum
 
@@ -1059,11 +1058,6 @@ def plot_prec_recall_check(
     plt.legend(loc=2)
 
 
-if __name__ == "__main__":
-    log.initialize(co.logname(__file__), file_level="debug", console_level="debug")
-    unittest.main()
-
-
 def get_xy(df, feature_names, label_name):
     x = df[feature_names].values
     y = df[label_name].values
@@ -1432,3 +1426,4 @@ def make_clf(cls, pars_dict, scaler=None, pca=None):
             return make_pipeline(copy.copy(scaler), copy.copy(pca), clf)
         return make_pipeline(copy.copy(scaler), clf)
     return clf
+

@@ -1,6 +1,5 @@
 import os
 import sys
-import unittest
 from collections import defaultdict, namedtuple
 import argparse
 from contextlib import closing
@@ -330,48 +329,6 @@ def do_stat():
         return 1
 
 
-class ReadFilesTest(unittest.TestCase):
-    def test_read_score_dict(self):
-        for soft_level in ENABLE_SOFT_LEVELS:
-            dct = read_scores_dict("wta", soft_level)
-            self.assertEqual(len(dct), 49)
-
-            if soft_level == "main":
-                sval = dct[((4, 6), (6, 0))]
-                self.assertTrue(0.6 < sval.value < 0.8)
-                self.assertTrue(120 < sval.size < 200)
-
-
-# class InitedDataTest(unittest.TestCase):
-#     @classmethod
-#     def setUpClass(cls):
-#         initialize(sex='wta')
-#
-#     def test_get_winloss(self):
-#         soft_level = 'main'
-#         date = datetime.date(2018, 4, 1)
-#         set1_score = (3, 6)
-#         set2_score = (7, 5)
-#         wl = decided_winloss_by_set2_winner('wta', soft_level, date,
-#                                             set1_score, set2_score)
-#         self.assertTrue(wl.size > MIN_SIZE_DEFAULT)
-#
-#     def test_order(self):
-#         import copy
-#
-#         for dct in data_dict.values():
-#             ywn_lst = dct.keys()
-#             ywn_copy_lst = copy.copy(ywn_lst)
-#             ywn_copy_lst.sort()
-#             self.assertEqual(ywn_copy_lst, ywn_lst)
-#
-#     def test_wta_min_year_weeknum(self):
-#         for soft_level in ENABLE_SOFT_LEVELS:
-#             min_ywn = data_dict[('wta', soft_level)].keys()[0]
-#             print 'slevel', soft_level, min_ywn
-#             self.assertEqual(min_ywn[0], 2003)
-
-
 def parse_command_line_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--stat", action="store_true")
@@ -386,8 +343,3 @@ if __name__ == "__main__":
     args = parse_command_line_args()
     if args.stat:
         sys.exit(do_stat())
-    else:
-        log.initialize(co.logname(__file__, test=True), "info", "info")
-        unittest.main()
-        dba.close_connect()
-        sys.exit(0)

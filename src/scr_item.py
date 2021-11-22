@@ -1,5 +1,3 @@
-import unittest
-
 from side import Side
 import common as co
 import score as sc
@@ -153,7 +151,3 @@ class SrvPair(Pair):
         """
         return sc.get_tie_open_side((self.x, self.y), self.srv_side) == co.LEFT
 
-
-if __name__ == "__main__":
-    unittest.main()
-    # print("hello")

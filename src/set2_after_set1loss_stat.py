@@ -1,6 +1,5 @@
 import sys
 import os
-import unittest
 from collections import defaultdict, namedtuple
 import copy
 import argparse
@@ -499,7 +498,3 @@ if __name__ == "__main__":
     args = parse_command_line_args()
     if args.stat:
         sys.exit(do_stat())
-    else:
-        log.initialize(co.logname(__file__, test=True), "info", "info")
-        unittest.main()
-        sys.exit(0)

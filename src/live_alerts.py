@@ -22,24 +22,30 @@ from report_line import SizedValue
 import predicts_db
 
 
-def remain_soft_main_skip_cond(match):
-    return match.soft_level != "main"
-
-
-def remain_ge_chal_skip_cond(match):
-    return match.level not in ("chal", "main", "gs", "masters", "teamworld")
-
-
 AlertMessage = namedtuple(
     "AlertMessage",
-    "hashid text fst_id snd_id fst_name snd_name back_side "
-    "case_name sex summary_href fst_betfair_name snd_betfair_name "
-    "prob book_prob comment",
+    [
+        "hashid",
+        "text",
+        "fst_id",
+        "snd_id",
+        "fst_name",
+        "snd_name",
+        "back_side",
+        "case_name",
+        "sex",
+        "summary_href",
+        "fst_betfair_name",
+        "snd_betfair_name",
+        "prob",
+        "book_prob",
+        "comment",
+    ],
 )
 
 
 class AlertData:
-    def __init__(self, back_side: Side, proba: float, comment: str = ''):
+    def __init__(self, back_side: Side, proba: float, comment: str = ""):
         self.back_side = back_side
         self.proba = proba
         self.comment = comment
@@ -73,13 +79,14 @@ class Alert(object):
         )
         back_text = f"[{'1' if back_side.is_left() else '2'}]"
         prob_text = f"P={round(prob, 3) if prob is not None else '_'}"
-        book_prob = (match.first_player_bet_chance() if back_side.is_left()
-                     else 1. - match.first_player_bet_chance())
+        book_prob = (
+            match.first_player_bet_chance()
+            if back_side.is_left()
+            else 1.0 - match.first_player_bet_chance()
+        )
         return AlertMessage(
             hashid=match.hashid(add_text=self_text),
-            text=(
-                f"{match.tostring()} {back_text} {prob_text} {comment} {self_text}"
-            ),
+            text=(f"{match.tostring()} {back_text} {prob_text} {comment} {self_text}"),
             fst_id=match.first_player.ident,
             snd_id=match.second_player.ident,
             fst_name=match.first_player.name if match.first_player else "",
@@ -134,7 +141,8 @@ class AlertSet(Alert):
             return self.make_message(match, *result)
         if isinstance(result, AlertData):
             return self.make_message(
-                match, result.back_side, result.proba, result.comment)
+                match, result.back_side, result.proba, result.comment
+            )
         if result in (co.LEFT, co.RIGHT):
             return self.make_message(match, result)
         return result
@@ -171,7 +179,7 @@ class AlertSet(Alert):
 
 
 def tieloss_affect_side(
-        match: LiveMatch, setnum: int, check_side: Side = None
+    match: LiveMatch, setnum: int, check_side: Side = None
 ) -> Optional[Side]:
     """ setnum >= 2 is currently gaming. Prev set is possible ended with tiebreak.
         если передан check_side, то проверяется только он.
@@ -196,7 +204,7 @@ def tieloss_affect_side(
 
 
 def final_comment(*args) -> str:
-    return ' '.join([a for a in args if a])
+    return " ".join([a for a in args if a])
 
 
 class AlertSetDecided(AlertSet):
@@ -225,8 +233,7 @@ class AlertSetDecidedWinClf(AlertSetDecided):
     """
 
     def __init__(
-        self,
-        back_opener: Optional[bool],
+        self, back_opener: Optional[bool],
     ):
         super().__init__(back_opener=back_opener)
         self.dec_begin_adv_dif = 0.1
@@ -301,16 +308,20 @@ class AlertSetDecidedWinClf(AlertSetDecided):
 
         def checked_return(back_side: Side, prob, comment: str, rejected: bool):
             allow_res = allow_back(match, back_side, self, prob)
-            ignored = (bool(allow_res)
-                       or str(allow_res) not in ('recently_won_h2h', 'absence'))
+            ignored = bool(allow_res) or str(allow_res) not in (
+                "recently_won_h2h",
+                "absence",
+            )
             if rejected or not allow_res:
                 comment = final_comment(comment.strip(), str(allow_res))
                 predicts_db.write_rejected(
-                    match, 'decided_00', back_side, reason=comment)
+                    match, "decided_00", back_side, reason=comment
+                )
                 log.info(
                     f"{self.__class__.__name__} {match.name}"
                     f" our {back_side} {comment}"
-                    f" {'ignored' if ignored else 'rejected'}")
+                    f" {'ignored' if ignored else 'rejected'}"
+                )
             if not ignored:
                 return False
             return back_side, prob, comment
@@ -326,8 +337,11 @@ class AlertSetDecidedWinClf(AlertSetDecided):
         if tieaff_codirect is not None:
             comments += f" {'+' if tieaff_codirect else '-'}tieaff"
         return checked_return(
-            clf_back_side, clf_prob, comments,
-            rejected=begadv_codirect is False or tieaff_codirect is False)
+            clf_back_side,
+            clf_prob,
+            comments,
+            rejected=begadv_codirect is False or tieaff_codirect is False,
+        )
 
     def _condition_now(self, match: LiveMatch, set_opener_side: Side):
         """Analyze current match state.
@@ -337,20 +351,25 @@ class AlertSetDecidedWinClf(AlertSetDecided):
             inset = match.score[-1]
             if inset == (0, 0):
                 opener_beg_sv, closer_beg_sv = self.dec_begin_svalues(
-                    match, set_opener_side)
+                    match, set_opener_side
+                )
                 opener_has_begin_adv = self.dec_begin_opener_adv(
-                    opener_beg_sv, closer_beg_sv)
+                    opener_beg_sv, closer_beg_sv
+                )
                 opener_has_tieaff_adv = self.tieloss_affect_opener_adv(
-                    match, set_opener_side)
+                    match, set_opener_side
+                )
                 clf_back_side, prob = clf_decided_00_apply.match_has_min_proba(
-                    match, set_opener_side)
+                    match, set_opener_side
+                )
                 return self.decision(
                     match,
                     set_opener_side,
                     clf_back_side,
                     prob,
                     opener_has_tieaff_adv,
-                    opener_has_begin_adv)
+                    opener_has_begin_adv,
+                )
         return True
 
 
@@ -380,21 +399,29 @@ class AlertSet2WinClf(AlertSet):
                 return False  # we are late
             if inset == (0, 0):
                 backing_side, prob = clf_secondset_00.match_has_min_proba(
-                    match, set_opener_side)
+                    match, set_opener_side
+                )
                 if backing_side is None:
                     return False
                 allow_res = allow_back(match, backing_side, self, prob)
-                is_tieaff = tieloss_affect_side(
-                        match, setnum=2, check_side=backing_side) == backing_side
+                is_tieaff = (
+                    tieloss_affect_side(match, setnum=2, check_side=backing_side)
+                    == backing_side
+                )
                 if not allow_res or is_tieaff:
-                    ignored = str(allow_res) not in ('recently_won_h2h', 'absence')
+                    ignored = str(allow_res) not in ("recently_won_h2h", "absence")
                     comment = final_comment(
-                        str(allow_res), 'tieaff' if is_tieaff else '',
-                        "ignored" if ignored else "")
-                    log.info(f"{self.__class__.__name__} {match.name}"
-                             f" our: {backing_side} {comment}")
+                        str(allow_res),
+                        "tieaff" if is_tieaff else "",
+                        "ignored" if ignored else "",
+                    )
+                    log.info(
+                        f"{self.__class__.__name__} {match.name}"
+                        f" our: {backing_side} {comment}"
+                    )
                     predicts_db.write_rejected(
-                        match, self.case_name(), backing_side, reason=comment)
+                        match, self.case_name(), backing_side, reason=comment
+                    )
                     if not ignored:
                         return False
                 return backing_side, prob
@@ -467,7 +494,8 @@ class AlertSc(Alert):
             return self.make_message(match, *result)
         if isinstance(result, AlertData):
             return self.make_message(
-                match, result.back_side, result.proba, result.comment)
+                match, result.back_side, result.proba, result.comment
+            )
         if result in (co.LEFT, co.RIGHT):
             return self.make_message(match, result)
         return result
@@ -561,6 +589,7 @@ class AlertScEqual(AlertSc):
 
 class AlertScEqualSetend(AlertScEqual):
     """ assume back_srv=True, back_srv=False - are implemented in two different objects"""
+
     def __init__(
         self,
         setname: str,
@@ -589,14 +618,19 @@ class AlertScEqualSetend(AlertScEqual):
             proba вычисляется приблизительно грубо как эмпир. вер-ть ok_st1 and ok_st2
         """
         st1_feat_name = f"{self.setname}_setend_srv"
-        st2_aspect = 'onstaymatch' if self.back_srv else 'onmatch'
+        st2_aspect = "onstaymatch" if self.back_srv else "onmatch"
         st2_feat_name = f"{self.setname}_{st2_aspect}_srv"
         try:
-            st1_feat = feature.player_feature(match.features, st1_feat_name,
-                                              is_first=trg_srv_side.is_left())
-            st2_feat = feature.player_feature(match.features, st2_feat_name,
-                                              is_first=trg_srv_side.is_right())
-            if st1_feat.value.size < self.min_size or st2_feat.value.size < self.min_size:
+            st1_feat = feature.player_feature(
+                match.features, st1_feat_name, is_first=trg_srv_side.is_left()
+            )
+            st2_feat = feature.player_feature(
+                match.features, st2_feat_name, is_first=trg_srv_side.is_right()
+            )
+            if (
+                st1_feat.value.size < self.min_size
+                or st2_feat.value.size < self.min_size
+            ):
                 return None, None
         except cco.FeatureError:
             return None, None
@@ -639,9 +673,12 @@ class AlertScEqualSetend(AlertScEqual):
 
     def _write_predict_db(self, match, backing_side: Side, proba: float):
         predicts_db.write_predict(
-            match, case_name=self.case_name(),
-            back_side=backing_side, proba=proba,
-            comments='OPENER' if self.back_srv else 'CLOSER')
+            match,
+            case_name=self.case_name(),
+            back_side=backing_side,
+            proba=proba,
+            comments="OPENER" if self.back_srv else "CLOSER",
+        )
 
     def _condition_now(self, match: LiveMatch, trg_srv_side: Side):
         """Analyze current match state.
@@ -671,10 +708,10 @@ class CacheCell:
     value: Optional[float] = field(default=None, init=False, repr=False)
 
     def is_skip(self):
-        return self.value == float('inf')
+        return self.value == float("inf")
 
     def set_skip(self):
-        self.value = float('inf')
+        self.value = float("inf")
 
     def set_value(self, value: float):
         self.value = value
@@ -691,7 +728,7 @@ class CachePairCell:
         elif index == 1:
             return self.right
         else:
-            raise ValueError(f'invalid index {index} for CachePairCell')
+            raise ValueError(f"invalid index {index} for CachePairCell")
 
     def set_skip_all(self):
         self.left.set_skip()
@@ -721,7 +758,7 @@ class AlertSc35Srv(AlertSc):
         self.cache_idx = 0 if srv_side.is_left() else 1
 
     def get_feat_name(self):
-        if self.setname == 'decided':
+        if self.setname == "decided":
             return f"{self.setname}_onmatch_srv"
         return f"{self.setname}_onset_srv"
 
@@ -742,8 +779,11 @@ class AlertSc35Srv(AlertSc):
             proba берется грубо как 1 - oppo_onmatch_hold_ratio
         """
         try:
-            feat = feature.player_feature(match.features, self.get_feat_name(),
-                                          is_first=self.srv_side.fliped().is_left())
+            feat = feature.player_feature(
+                match.features,
+                self.get_feat_name(),
+                is_first=self.srv_side.fliped().is_left(),
+            )
             if feat.value.size < self.min_size:
                 return None, None
         except cco.FeatureError:
@@ -752,7 +792,7 @@ class AlertSc35Srv(AlertSc):
             srfrnkcmp = match.get_ranks_cmp(rtg_name="elo_alt", is_surface=True)
             oppo_side = self.srv_side.fliped()
             if not srfrnkcmp.side_prefer(oppo_side, self.max_oppo_rank_adv_dif):
-                proba = (1 - feat.value.value)
+                proba = 1 - feat.value.value
                 return True, proba
         return False, None
 
@@ -792,23 +832,26 @@ class AlertSc35Srv(AlertSc):
             if cache_pair is None:
                 log.warn(
                     f"{self.case_name()} cache NOT INITED {match.name}"
-                    f" trg_srv_side:{trg_srv_side}")
+                    f" trg_srv_side:{trg_srv_side}"
+                )
                 return False
             cache_cell = cache_pair[self.cache_idx]
             if cache_cell.is_skip():
                 log.warn(
                     f"{self.case_name()} cache TO SKIP IDX {self.cache_idx}"
-                    f" {match.name} trg_srv_side:{trg_srv_side}")
+                    f" {match.name} trg_srv_side:{trg_srv_side}"
+                )
                 return False
             if cache_cell.value is None:
                 log.warn(
                     f"{self.case_name()} cache NONE IDX {self.cache_idx}"
-                    f" {match.name} trg_srv_side:{trg_srv_side}")
+                    f" {match.name} trg_srv_side:{trg_srv_side}"
+                )
                 return False
 
             proba = cache_cell.value
             predicts_db.write_predict(match, self.case_name(), backing_side, proba)
-            if self.setname == 'open':
+            if self.setname == "open":
                 return False  # experimental mode, collect virt. results
             return backing_side, proba
 
@@ -820,10 +863,7 @@ class AlertSc35Srv(AlertSc):
 
 class AlertScEqualTieRatio(AlertScEqual):
     def __init__(
-        self,
-        setname: str,
-        max_surf_rank_dif: int,
-        adv_side_funs,
+        self, setname: str, max_surf_rank_dif: int, adv_side_funs,
     ):
         super().__init__(setname=setname, insetscore=(6, 6), back_srv=None)
 
@@ -925,8 +965,9 @@ class AlertScEqualTieRatio(AlertScEqual):
                 else:
                     match.set_cache_value(
                         featname,
-                        value=AlertData(backing_side, proba,
-                                        self.comment(match, backing_side))
+                        value=AlertData(
+                            backing_side, proba, self.comment(match, backing_side)
+                        ),
                     )
         return trg_srv_side
 
@@ -1047,32 +1088,34 @@ class AllowBackResult:
         return self.comment
 
     def __repr__(self):
-        return f'AllowBackResult({self.code}, {self.comment})'
+        return f"AllowBackResult({self.code}, {self.comment})"
 
 
 def allow_back(match, backing_side, alert, prob, case_name=None) -> AllowBackResult:
     if backing_side.is_oppose(match.recently_won_h2h_side()):
-        return AllowBackResult(False, 'recently_won_h2h')
+        return AllowBackResult(False, "recently_won_h2h")
 
     is_retired = feature.is_player_feature(
-        match.features, "retired", is_first=backing_side.is_left())
+        match.features, "retired", is_first=backing_side.is_left()
+    )
     is_absence = feature.is_player_feature(
-        match.features, "absence", is_first=backing_side.is_left())
+        match.features, "absence", is_first=backing_side.is_left()
+    )
     if is_retired or is_absence:
-        return AllowBackResult(False, 'retired' if is_retired else 'absence')
+        return AllowBackResult(False, "retired" if is_retired else "absence")
 
     if backing_side.is_oppose(match.last_res_advantage_side()):
-        return AllowBackResult(False, 'last_results')
+        return AllowBackResult(False, "last_results")
 
     if prob is not None and prob < 0.75:
         vs_incomer_adv_side = match.vs_incomer_advantage_side()
         if backing_side.is_oppose(vs_incomer_adv_side):
-            return AllowBackResult(False, 'vs_incomer')
+            return AllowBackResult(False, "vs_incomer")
 
     if back_in_blacklist(match, backing_side, case_name):
-        return AllowBackResult(False, 'blacklist')
+        return AllowBackResult(False, "blacklist")
 
-    return AllowBackResult(True, '')
+    return AllowBackResult(True, "")
 
 
 def back_in_blacklist(match, backing_side: Side, case_name=None):

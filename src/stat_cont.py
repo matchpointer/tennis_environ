@@ -1,13 +1,10 @@
 from collections import defaultdict, namedtuple
-from operator import itemgetter
 import operator
 import re
 import functools
-import unittest
 
 import common as co
 import log
-import report_line as rl
 import score as sc
 
 
@@ -291,23 +288,6 @@ class WinLoss(object):
         return WinLoss(win_count=self.loss_count, loss_count=self.win_count)
 
 
-class WinLossTest(unittest.TestCase):
-    def test_compare(self):
-        wl1 = WinLoss.create_from_text("41.2% (17)")
-        wl2 = WinLoss.create_from_text("37.8% (339)")
-        self.assertTrue(wl1 > wl2)
-        self.assertTrue(wl2 < wl1)
-        self.assertEqual([wl2, wl1], sorted([wl1, wl2]))
-
-    def test_sum(self):
-        wl1 = WinLoss(7, 3)
-        wl2 = WinLoss(6, 4)
-        wl3 = WinLoss(0, 0)
-        dct = {1: wl1, 2: wl2, 3: wl3}
-        s = sum((dct[i] for i in range(1, 4)), WinLoss())
-        self.assertEqual(wl1 + wl2 + wl3, s)
-
-
 class WinLossPairValue(object):
     """РґР»СЏ РЅР°РєРѕРїР»РµРЅРёСЏ Р·РЅР°С‡РµРЅРёР№ (value) СЃ СЂР°Р·Р±РёРІРєРѕР№ РЅР° РґРІР° РІР°СЂРёР°РЅС‚Р°:
     РІС‹РёРіСЂС‹С€ РёР»Рё РїСЂРѕРёРіСЂС‹С€.
@@ -379,39 +359,6 @@ def create_summator_histogram():
 
 def create_winloss_pair_value_histogram():
     return Histogram(WinLossPairValue)
-
-
-class SetsScoreHistogramTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.histos = [
-            Histogram(int, {(2, 0): 5, (2, 1): 3, (1, 2): 1, (0, 2): 2}),
-            Histogram(int, {(2, 0): 6, (2, 1): 4, (1, 2): 2, (0, 2): 3}),
-        ]
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.histos = []
-
-    def test_init_and_sum(self):
-        self.assertEqual(self.histos[0][(2, 0)], 5)
-        self.assertEqual(self.histos[0][(2, 1)], 3)
-        self.assertEqual(self.histos[0][(1, 2)], 1)
-        self.assertEqual(self.histos[0][(0, 2)], 2)
-
-        self.assertEqual(self.histos[1][(2, 0)], 6)
-        self.assertEqual(self.histos[1][(2, 1)], 4)
-        self.assertEqual(self.histos[1][(1, 2)], 2)
-        self.assertEqual(self.histos[1][(0, 2)], 3)
-
-        start_histo = Histogram()
-        sc.complete_sets_score_keys(start_histo)
-        histo = sum(self.histos, start_histo)
-        self.assertEqual(type(histo), Histogram)
-        self.assertEqual(histo[(2, 0)], 11)
-        self.assertEqual(histo[(2, 1)], 7)
-        self.assertEqual(histo[(1, 2)], 3)
-        self.assertEqual(histo[(0, 2)], 5)
 
 
 class QuadServiceStatError(co.TennisError):
@@ -498,31 +445,6 @@ class HoldStat(object):
                 fst_snd[0].hit(prev_left_wingame)
             else:
                 fst_snd[1].hit(not prev_left_wingame)
-
-
-class HoldStatTest(unittest.TestCase):
-    def test_close_previous(self):
-        stat1 = HoldStat()
-        stat1.close_previous(
-            sc.Score("1-1"), prev_left_service=True, prev_left_wingame=True
-        )  # 1/1, 0/0
-        stat1.close_previous(
-            sc.Score("2-1"), prev_left_service=False, prev_left_wingame=False
-        )  # 1/1, 1/1
-        stat1.close_previous(
-            sc.Score("2-2"), prev_left_service=True, prev_left_wingame=False
-        )  # 1/2, 1/1
-        stat1.close_previous(
-            sc.Score("2-3"), prev_left_service=False, prev_left_wingame=False
-        )  # 1/2, 2/2
-        stat1.close_previous(
-            sc.Score("2-4"), prev_left_service=True, prev_left_wingame=True
-        )  # 2/3, 2/2
-        stat1.close_previous(
-            sc.Score("6-6"), prev_left_service=True, prev_left_wingame=False
-        )  # skip tie
-        res_pair = stat1.result_pair(setnum=1, as_float=False)
-        self.assertEqual(res_pair, (WinLoss(2, 1), WinLoss(2, 0)))
 
 
 class MissBigPointStat(object):
@@ -693,174 +615,6 @@ class MissBigPointStat(object):
         return max_where_1 == max_where_2
 
 
-class GameTense:
-    def __init__(self, server_min_pts, receiver_min_pts, is_gp, is_bp, hold):
-        self.server_min_pts = server_min_pts
-        self.receiver_min_pts = receiver_min_pts
-        self.is_gp = is_gp
-        self.is_bp = is_bp
-        self.hold = hold
-        self.srv_side = None
-
-    def put_srv_side(self, side):
-        if self.srv_side is None:
-            self.srv_side = side
-
-    def empty(self):
-        return (
-            self.server_min_pts == 0
-            and self.receiver_min_pts == 0
-            and not self.is_gp
-            and not self.is_bp
-            and self.hold is None
-        )
-
-    def is_points_info_full(self, max_points_count):
-        return (
-            self.server_min_pts >= max_points_count
-            and self.receiver_min_pts >= max_points_count
-            and self.is_gp
-            and self.is_bp
-        )
-
-    def tense_code(self):
-        result = None
-        if self.hold:
-            if self.receiver_min_pts == 0:
-                result = 5
-            elif self.receiver_min_pts == 1:
-                result = 4
-            elif self.receiver_min_pts == 2:
-                result = 3
-            else:
-                result = 1 if self.is_bp else 2
-        elif self.hold is False:
-            if self.server_min_pts == 0:
-                result = -5
-            elif self.server_min_pts == 1:
-                result = -4
-            elif self.server_min_pts == 2:
-                result = -3
-            else:
-                result = -1 if self.is_gp else -2
-        return result
-
-
-class GameTenseStat(object):
-    MAX_POINTS_COUNT = 3
-
-    def __init__(self):
-        # (setnum, gamenum) -> GameTense
-        self.srvinfo_dict = defaultdict(lambda: GameTense(0, 0, False, False, None))
-
-    def is_match_begin_empty(self):
-        return self.srvinfo_dict[(1, 1)].empty()
-
-    def opener_side(self, setnum):
-        g1_srv_side = self.srvinfo_dict[(setnum, 1)].srv_side
-        if g1_srv_side:
-            return g1_srv_side
-        g3_srv_side = self.srvinfo_dict[(setnum, 3)].srv_side
-        if g3_srv_side:
-            return g3_srv_side
-        g5_srv_side = self.srvinfo_dict[(setnum, 5)].srv_side
-        if g5_srv_side:
-            return g5_srv_side
-
-    def avg_tense_code(self, setnum, gamenum_pred):
-        sumer = Sumator(init_sum=0.0)
-        for gamenum in range(1, 13):
-            if gamenum_pred(gamenum):
-                info = self.srvinfo_dict[(setnum, gamenum)]
-                if not info.empty():
-                    sumer.hit(info.tense_code())
-        return sumer.average()
-
-    def values(self, setnum, gamenum_pred):
-        for gamenum in range(1, 13):
-            if gamenum_pred(gamenum):
-                info = self.srvinfo_dict[(setnum, gamenum)]
-                if not info.empty():
-                    yield info.tense_code()
-
-    def close_previous(
-        self, prev_left_wingame, prev_score, prev_ingame, prev_left_service
-    ):
-        if prev_left_service is None:
-            return
-        setnum = len(prev_score)
-        gamenum = sum(prev_score[-1]) + 1
-        prev_info = self.srvinfo_dict[(setnum, gamenum)]
-        prev_info.hold = prev_left_wingame is prev_left_service
-        if prev_info.is_points_info_full(self.MAX_POINTS_COUNT):
-            return
-        num_ingame = sc.ingame_to_num(prev_ingame, tiebreak=False)
-        server_pts = num_ingame[0] if prev_left_service else num_ingame[1]
-        receiver_pts = num_ingame[1] if prev_left_service else num_ingame[0]
-        if (
-            prev_info.server_min_pts < self.MAX_POINTS_COUNT
-            and prev_info.server_min_pts < server_pts
-        ):
-            prev_info.server_min_pts = min(server_pts, self.MAX_POINTS_COUNT)
-
-        if (
-            prev_info.receiver_min_pts < self.MAX_POINTS_COUNT
-            and prev_info.receiver_min_pts < receiver_pts
-        ):
-            prev_info.receiver_min_pts = min(receiver_pts, self.MAX_POINTS_COUNT)
-
-        is_bp, is_gp = self.is_bgpoint_at(num_ingame, prev_left_service)
-        if not prev_info.is_bp and is_bp:
-            prev_info.is_bp = True
-        if not prev_info.is_gp and is_gp:
-            prev_info.is_gp = True
-
-    def continue_current(self, score, ingame, left_service):
-        """assume that only ingame is changing during current game"""
-        if left_service is None:
-            return
-        setnum = len(score)
-        gamenum = sum(score[-1]) + 1
-        cur_info = self.srvinfo_dict[(setnum, gamenum)]
-        cur_info.put_srv_side(co.side(left_service))
-        if cur_info.is_points_info_full(self.MAX_POINTS_COUNT):
-            return
-        num_ingame = sc.ingame_to_num(ingame, tiebreak=False)
-        server_pts = num_ingame[0] if left_service else num_ingame[1]
-        receiver_pts = num_ingame[1] if left_service else num_ingame[0]
-        if (
-            cur_info.server_min_pts < self.MAX_POINTS_COUNT
-            and cur_info.server_min_pts < server_pts
-        ):
-            cur_info.server_min_pts = min(server_pts, self.MAX_POINTS_COUNT)
-
-        if (
-            cur_info.receiver_min_pts < self.MAX_POINTS_COUNT
-            and cur_info.receiver_min_pts < receiver_pts
-        ):
-            cur_info.receiver_min_pts = min(receiver_pts, self.MAX_POINTS_COUNT)
-
-        is_bp, is_gp = self.is_bgpoint_at(num_ingame, left_service)
-        if not cur_info.is_bp and is_bp:
-            cur_info.is_bp = True
-        if not cur_info.is_gp and is_gp:
-            cur_info.is_gp = True
-
-    @staticmethod
-    def is_bgpoint_at(num_ingame, left_service):
-        """:return (is_bp, is_gp)"""
-        left_edge_cnt, right_edge_cnt = sc.num_ingame_bgpoint_counts(
-            num_ingame, tiebreak=False
-        )
-        if left_service:
-            is_gp = left_edge_cnt > 0
-            is_bp = right_edge_cnt > 0
-        else:
-            is_gp = right_edge_cnt > 0
-            is_bp = left_edge_cnt > 0
-        return is_bp, is_gp
-
-
 class AllowBreakPointStat(object):
     def __init__(self):
         self.bpcount_from_setnum = defaultdict(lambda: (0, 0))
@@ -933,18 +687,6 @@ class AllowBreakPointStat(object):
         return sc.num_ingame_breakpoint_count(num_ingame, left_service)
 
 
-class AllowBreakPointStatTest(unittest.TestCase):
-    def test_continue_bp(self):
-        stat1 = AllowBreakPointStat()
-
-        prev_score = sc.Score("5-2")
-        prev_left_service = False
-        prev_ingame = ("30", "30")
-        ingame = ("40", "30")
-        stat1.continue_current(prev_score, prev_ingame, prev_left_service, ingame)
-        self.assertEqual((0, 1), stat1.get_counts())
-
-
 class MatchLastInrow(object):
     def __init__(self):
         # here setnum -> LastInrowCount
@@ -995,36 +737,6 @@ class SetOpenerMatchTracker:
         opener_side = self.get_opener_side(setnum, scr, at)
         if opener_side is not None:
             return opener_side == co.LEFT
-
-
-class TestSetOpener(unittest.TestCase):
-    def test_match_track(self):
-        trk = SetOpenerMatchTracker()
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, None)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, None)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, True)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, True)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, True)
-
-        r = trk.put(setnum=2, scr=(0, 0), is_left_service=False)
-        self.assertEqual(r, None)
-
-        r = trk.get_opener_side(setnum=1, scr=(5, 3), at=True)
-        self.assertEqual(r, co.LEFT)
-
-        r = trk.get_opener_side(setnum=1, scr=(5, 3), at=False)
-        self.assertEqual(r, co.RIGHT)
-
-        r = trk.get_opener_side(setnum=1, scr=(5, 4), at=True)
-        self.assertEqual(r, co.RIGHT)
-
-        r = trk.get_opener_side(setnum=1, scr=(0, 0), at=True)
-        self.assertEqual(r, co.LEFT)
 
 
 class SetOpenerHitCounter:
@@ -1078,7 +790,6 @@ class QuadServiceStat(object):
         self.allow_bp_stat = AllowBreakPointStat()
         self.lastinrow = MatchLastInrow()  # who win last games serie in each set
         self.breakup_tracker = BreakupTracker()
-        self.game_tense_stat = GameTenseStat()
 
     def maxmin_for_tie(
         self, back_side, back_opener, min_size=19, min_thresh=0.58, max_thresh=0.58
@@ -1370,9 +1081,6 @@ class QuadServiceStat(object):
             self.allow_bp_stat.close_previous(
                 prev_left_wingame, prev_score, prev_ingame, prev_left_service
             )
-            self.game_tense_stat.close_previous(
-                prev_left_wingame, prev_score, prev_ingame, prev_left_service
-            )
             self.breakup_tracker.close_previous(
                 prev_score, prev_left_service, prev_left_wingame
             )
@@ -1395,7 +1103,6 @@ class QuadServiceStat(object):
             self.allow_bp_stat.continue_current(
                 prev_score, prev_ingame, prev_left_service, ingame
             )
-            self.game_tense_stat.continue_current(prev_score, ingame, prev_left_service)
 
     def __open_fresh(self, score, ingame, left_service):
         if ingame in (None, ("0", "0")):
@@ -1445,355 +1152,3 @@ class QuadServiceStat(object):
                     raise QuadServiceStatLateError(
                         "prevscore {} toscore {}".format(prev_score, score)
                     )
-
-
-class QuadServiceStatTest(unittest.TestCase):
-    def test_close_by_right(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("5-1"),
-            prev_ingame=("30", "40"),
-            prev_left_service=False,
-            score=sc.Score("5-2"),
-            ingame=("0", "0"),
-            left_service=True,
-        )
-
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.LEFT))
-
-    def test_close_by_left_then_fresh_right(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("5-1"),
-            prev_ingame=("30", "40"),
-            prev_left_service=False,
-            score=sc.Score("6-1 0-0"),
-            ingame=("0", "40"),
-            left_service=True,
-        )
-        # closing: right broken by 3 points
-        self.assertEqual(WinLoss(0, 2), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-
-        # freshing: left loss 3 points
-        self.assertEqual(WinLoss(0, 2), qstat1.srv_win_loss(co.LEFT, co.ADV))
-        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
-
-    def test_close_by_left_then_fresh_right_tiebreak(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("6-4 5-6"),
-            prev_ingame=("30", "40"),
-            prev_left_service=True,
-            score=sc.Score("6-4 6-6"),
-            ingame=("0", "2"),
-            left_service=True,
-        )
-        # closing: left hold by win 3 points: ADV(2), DEUCE(1)
-        # freshing: right by win 1 point: DEUCE(1)
-        # freshing: left by loss 1 point: ADV(0)
-        self.assertEqual(WinLoss(2, 1), qstat1.srv_win_loss(co.LEFT, co.ADV))
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-
-    def test_close_by_left_then_fresh_left_tiebreak(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("6-4 5-6"),
-            prev_ingame=("30", "40"),
-            prev_left_service=True,
-            score=sc.Score("6-4 6-6"),
-            ingame=("2", "0"),
-            left_service=True,
-        )
-        # closing: left hold by win 3 points: ADV(2), DEUCE(1)
-        # freshing: right opener by loss 1 point: DEUCE(0)
-        # freshing: left by win 1 point: ADV(1)
-        self.assertEqual(WinLoss(3, 0), qstat1.srv_win_loss(co.LEFT, co.ADV))
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
-        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-
-
-class TotalSlices(object):
-    def __init__(self):
-        self._totcollect_from_key = defaultdict(TotalCollector)
-
-    def get_keys(self):
-        return list(self._totcollect_from_key.keys())
-
-    def get_max_keys_cardinality(self):
-        return max([k.cardinality() for k in self._totcollect_from_key.keys()])
-
-    def addition(self, score, keys):
-        normalized_total = score.normalized_total()
-        for key in keys:
-            self._totcollect_from_key[key].addition(normalized_total)
-
-    def substract(self, score, keys):
-        normalized_total = score.normalized_total()
-        for key in keys:
-            self._totcollect_from_key[key].substract(normalized_total)
-            if sum(self._totcollect_from_key[key].slots_hits) == 0:
-                del self._totcollect_from_key[key]
-
-    def report_line_list(self, fun_name, keys):
-        items = []
-        for key in keys:
-            if key in self._totcollect_from_key:
-                totcollect = self._totcollect_from_key[key]
-                items.append(
-                    rl.ReportLine(
-                        key=key,
-                        value=getattr(totcollect, fun_name)(),
-                        size=totcollect.hits_count(),
-                    )
-                )
-        return rl.ReportLineList(items=items)
-
-    def write_report(
-        self,
-        filename,
-        memfun_name,
-        sort_asc,
-        sort_keyfun=itemgetter(1),
-        threshold=0,
-        head="",
-    ):
-        """Write to filename patterns: 'key value (size)\n'.
-        Sort on value (default) according to sort_asc."""
-        if len(self._totcollect_from_key) == 0:
-            return
-        key_val_num = []
-        for key, totcollector in self._totcollect_from_key.items():
-            if totcollector.hits_count() >= threshold:
-                val = getattr(totcollector, memfun_name)()
-                key_val_num.append((str(key), val, totcollector.hits_count()))
-        if sort_asc is True:
-            key_val_num.sort(key=sort_keyfun)
-        elif sort_asc is False:
-            key_val_num.sort(key=sort_keyfun, reverse=True)
-
-        key_len_max = max([len(str(k)) for k in self._totcollect_from_key.keys()])
-        with open(filename, "w") as fhandle:
-            if head:
-                fhandle.write(head + "\n")
-            fmt = "{0:_<" + str(key_len_max + 2) + "}  {1:5.2f} ({2})\n"
-            for key, value, num in key_val_num:
-                fhandle.write(fmt.format(key, value, num))
-
-    def value(self, key, memfun_name):
-        totcollector = self._totcollect_from_key[key]
-        return getattr(totcollector, memfun_name)()
-
-    def size(self, key):
-        totcollector = self._totcollect_from_key[key]
-        return totcollector.hits_count()
-
-    def get_collector(self, key):
-        return self._totcollect_from_key[key]
-
-
-def slices_table_report(
-    fun_name, slices, titles, idx1, idx2, min_diff, min_size, filter_keys, filename
-):
-    """output slices data which |slices[idx1].value[k] - slices[idx2].value[k]| > min_diff
-    for k in filter_keys.
-    If filter_keys is None then used keys from slices[idx1].get_keys(),
-                            slices[idx2].get_keys() with max key cardinality.
-    """
-    assert len(slices) == len(titles), "len(slices) == len(titles) not supplied"
-
-    def keys_selected(fun_name, filter_keys, slices, idx1, idx2, min_diff, min_size):
-        assert len(slices) > max(idx1, idx2), "len(slices) >= 3 not supplied"
-        selected = []
-        if filter_keys:
-            use_keys = filter_keys
-        else:
-            use_keys = list(set(slices[idx1].get_keys()) & set(slices[idx2].get_keys()))
-            max_key_cardinality = max([k.cardinality() for k in use_keys])
-            use_keys = [k for k in use_keys if k.cardinality() == max_key_cardinality]
-        for filter_key in use_keys:
-            if (
-                slices[idx1].size(filter_key) >= min_size
-                and slices[idx2].size(filter_key) >= min_size
-            ):
-                value1 = slices[idx1].value(filter_key, fun_name)
-                value2 = slices[idx2].value(filter_key, fun_name)
-                if abs(value1 - value2) >= min_diff:
-                    selected.append(filter_key)
-        return selected
-
-    sel_keys = keys_selected(
-        fun_name, filter_keys, slices, idx1, idx2, min_diff, min_size
-    )
-    if len(sel_keys) > 0:
-        key_len_max = max([len(str(k)) for k in sel_keys])
-        titles_line = " " * (key_len_max + 2)
-        for title in titles:
-            titles_line += title + "\t"
-        key_fmt = "{0:_<" + str(key_len_max + 2) + "} "
-        with open(filename, "w") as fh:
-            fh.write(titles_line + "\n")
-            for filter_key in sorted(sel_keys):
-                fh.write(key_fmt.format(filter_key))
-                for slc in slices:  # columns
-                    value = slc.value(filter_key, fun_name)
-                    size = slc.size(filter_key)
-                    fh.write(
-                        "{0:5.2f} ({1}) {2}".format(
-                            value, size, " " * (5 - len(str(size)))
-                        )
-                    )
-                fh.write("\n")
-
-
-class TotalCollector(object):
-    slots_count = 16
-    begin_slot_value = 12
-
-    def __init__(self):
-        self.slots_hits = []
-        for _ in range(TotalCollector.slots_count):
-            self.slots_hits.append(0)
-
-    def addition(self, normalized_total):
-        slot_idx = normalized_total - TotalCollector.begin_slot_value
-        assert slot_idx < TotalCollector.slots_count, "unexpected slot_idx: {}".format(
-            slot_idx
-        )
-        self.slots_hits[slot_idx] += 1
-
-    def substract(self, normalized_total):
-        slot_idx = normalized_total - TotalCollector.begin_slot_value
-        assert slot_idx < TotalCollector.slots_count, "unexpected slot_idx: {}".format(
-            slot_idx
-        )
-        assert (
-            self.slots_hits[slot_idx] > 0
-        ), "unexpected slot_idx: {} with zero count".format(slot_idx)
-        self.slots_hits[slot_idx] -= 1
-
-    def hits_count(self):
-        return sum(self.slots_hits)
-
-    def mean_value(self):
-        hits_num = self.hits_count()
-        assert hits_num > 0, "can not def mean_value without hits"
-        result = 0
-        slot_value = TotalCollector.begin_slot_value
-        for idx in range(TotalCollector.slots_count):
-            result += slot_value * self.slots_hits[idx]
-            slot_value += 1
-        return float(result) / float(hits_num)
-
-    def estimate_value(self, up_idx=7):
-        hits_num = self.hits_count()
-        assert hits_num > 0, "can not def mean_value without hits"
-        assert up_idx < TotalCollector.slots_count, "up_idx is out of range"
-
-        low_flip_sum = 0
-        for idx in range(up_idx):
-            low_flip_sum += (
-                co.centered_int_flip(idx + 1, 1, up_idx) * self.slots_hits[idx]
-            )
-        if low_flip_sum == 0:
-            return 999.0
-
-        up_sum = 0
-        for idx in range(up_idx, TotalCollector.slots_count):
-            up_sum += (idx + 1) * self.slots_hits[idx]
-
-        return float(up_sum) / float(low_flip_sum)
-
-    def estimate_value2(self, up_idx=7):
-        hits_num = self.hits_count()
-        assert hits_num > 0, "can not def estimate_value2 without hits"
-        assert up_idx < TotalCollector.slots_count, "up_idx is out of range"
-
-        (low_sum, low_hits_num) = (0, 0)
-        for idx in range(up_idx):
-            low_sum += (idx + 1) * self.slots_hits[idx]
-            low_hits_num += self.slots_hits[idx]
-        if low_hits_num == 0:
-            return 999.0
-
-        (up_sum, up_hits_num) = (0, 0)
-        for idx in range(up_idx, TotalCollector.slots_count):
-            up_sum += (idx + 1) * self.slots_hits[idx]
-            up_hits_num += self.slots_hits[idx]
-        if up_hits_num == 0:
-            return 0.0
-
-        return (float(up_sum) / float(up_hits_num)) / co.centered_float_flip(
-            float(low_sum) / float(low_hits_num), 1, up_idx
-        )
-
-    def estimate_value2_test(self, up_idx=7):
-        hits_num = self.hits_count()
-        assert hits_num > 0, "can not def estimate_value2 without hits"
-        assert up_idx < TotalCollector.slots_count, "up_idx is out of range"
-
-        (low_sum, low_hits_num) = (0, 0)
-        for idx in range(up_idx):
-            low_sum += (idx + 1) * self.slots_hits[idx]
-            low_hits_num += self.slots_hits[idx]
-        if low_hits_num == 0:
-            return 999.0
-
-        (up_sum, up_hits_num) = (0, 0)
-        for idx in range(up_idx, TotalCollector.slots_count):
-            up_sum += (idx + 1) * self.slots_hits[idx]
-            up_hits_num += self.slots_hits[idx]
-        if up_hits_num == 0:
-            return 0.0
-
-        low = float(low_sum) / float(low_hits_num)
-        low_fliped = co.centered_float_flip(low, 1, up_idx)
-        up = float(up_sum) / float(up_hits_num)
-        estimate = up / low_fliped
-        return estimate, low, low_fliped, low_sum, low_hits_num, up, up_sum, up_hits_num
-
-    def ratio_by_cmpfun(self, cmpfun):
-        true_count, false_count = (0, 0)
-        slot_value = TotalCollector.begin_slot_value
-        for idx in range(TotalCollector.slots_count):
-            if cmpfun(slot_value):
-                true_count += self.slots_hits[idx]
-            else:
-                false_count += self.slots_hits[idx]
-            slot_value += 1
-        assert (
-            true_count > 0 or false_count > 0
-        ), "empty TotalCollector when ratio_by_cmpfun"
-        return float(true_count) / float(true_count + false_count)
-
-    def ratio_by_le(self, value):
-        return self.ratio_by_cmpfun(lambda x: operator.le(x, value))
-
-    def ratio_by_le_18(self):
-        return self.ratio_by_le(18)
-
-    def ratio_by_le_19(self):
-        return self.ratio_by_le(19)
-
-    def ratio_by_le_20(self):
-        return self.ratio_by_le(20)
-
-    def ratio_by_le_21(self):
-        return self.ratio_by_le(21)
-
-    def ratio_by_le_22(self):
-        return self.ratio_by_le(22)
-
-    def ratio_by_le_23(self):
-        return self.ratio_by_le(23)
-
-
-if __name__ == "__main__":
-    log.initialize(co.logname(__file__, test=True), "debug", "debug")
-    unittest.main()

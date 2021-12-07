@@ -33,7 +33,6 @@ import oncourt_players
 import common_wdriver
 import matchstat
 
-import clf_secondset_00
 import decided_set
 import weeked_tours
 from live import (
@@ -51,9 +50,7 @@ import betfair_client
 from live_alerts import (
     AlertMessage,
     AlertSetDecidedWinClf,
-    AlertSet2WinClf,
     AlertScEqualTieRatio,
-    AlertScEqualSetend,
     AlertSc35Srv,
 )
 import predicts_db
@@ -208,12 +205,10 @@ class Application(tkinter.Frame):
 
     def make_alerts(self):
         clf_decided_00_apply.load_variants()
-        clf_secondset_00.initialize()
         sex = "wta"
 
         self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
             back_opener=None))
-        self.alerts_from_sex[sex].append(AlertSet2WinClf())
 
         self.alerts_from_sex[sex].append(
             AlertScEqualTieRatio(
@@ -254,7 +249,6 @@ class Application(tkinter.Frame):
 
         self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
             back_opener=None))
-        self.alerts_from_sex[sex].append(AlertSet2WinClf())
 
         self.alerts_from_sex[sex].append(
             AlertScEqualTieRatio(

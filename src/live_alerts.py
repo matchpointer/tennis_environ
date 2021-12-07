@@ -11,7 +11,6 @@ import common as co
 import log
 import clf_common as cco
 from score import Scr, setidx_by_name
-import clf_secondset_00
 from live import LiveMatch
 import betfair_client
 import inset_keep_recovery
@@ -370,61 +369,6 @@ class AlertSetDecidedWinClf(AlertSetDecided):
                     opener_has_tieaff_adv,
                     opener_has_begin_adv,
                 )
-        return True
-
-
-class AlertSet2WinClf(AlertSet):
-    def __init__(self):
-        super().__init__(setname="second", back_opener=None)
-        self.trg_setnum = 2
-
-    def case_name(self):
-        return "secondset_00"
-
-    def _condition_common(self, match: LiveMatch):
-        """co.LEFT, co.RIGHT (who will opener), False (gone), True (attention)"""
-        result = super()._condition_common(match)
-        if result in (co.LEFT, co.RIGHT):
-            if clf_secondset_00.skip_cond(match):
-                return False
-        return result
-
-    def _condition_now(self, match: LiveMatch, set_opener_side: Side):
-        """Analyze current match state.
-        Return back side (if fired), False (if gone), True (if attention)
-        """
-        if match.score and len(match.score) == 2:
-            inset = match.score[1]
-            if sum(inset) > 1:
-                return False  # we are late
-            if inset == (0, 0):
-                backing_side, prob = clf_secondset_00.match_has_min_proba(
-                    match, set_opener_side
-                )
-                if backing_side is None:
-                    return False
-                allow_res = allow_back(match, backing_side, self, prob)
-                is_tieaff = (
-                    tieloss_affect_side(match, setnum=2, check_side=backing_side)
-                    == backing_side
-                )
-                if not allow_res or is_tieaff:
-                    ignored = str(allow_res) not in ("recently_won_h2h", "absence")
-                    comment = final_comment(
-                        str(allow_res),
-                        "tieaff" if is_tieaff else "",
-                        "ignored" if ignored else "",
-                    )
-                    log.info(
-                        f"{self.__class__.__name__} {match.name}"
-                        f" our: {backing_side} {comment}"
-                    )
-                    predicts_db.write_rejected(
-                        match, self.case_name(), backing_side, reason=comment
-                    )
-                    if not ignored:
-                        return False
-                return backing_side, prob
         return True
 
 

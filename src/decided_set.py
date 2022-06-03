@@ -4,12 +4,13 @@ import datetime
 from collections import defaultdict, namedtuple
 import argparse
 from contextlib import closing
+from typing import Optional
 
-import log
+from loguru import logger as log
 import common as co
 import cfg_dir
 import file_utils as fu
-import stat_cont as st
+from stat_cont import WinLoss, Sumator
 import report_line as rl
 import dict_tools
 import dba
@@ -17,6 +18,7 @@ import oncourt_players
 import matchstat
 import score as sc
 import feature
+
 
 # here first_id is decided set winner with games_dif (bonus_value) in decided
 MatchResult = namedtuple("MatchResult", "first_id second_id games_dif")
@@ -27,24 +29,45 @@ results_dict = defaultdict(lambda: defaultdict(list))
 # START_HISTORY_DATE = datetime.date(2014, 1, 1)
 START_HISTORY_DATE = datetime.date.today() - datetime.timedelta(days=365 * 3)
 
+BONUS_REGUL_MAX_SIZE = 12
+
+MIN_SIZE = 4  # in context of pair players
+
+_regul_dict = {
+    # score: regularized score
+    # size == 6:
+    (6, 0): (5, 1),
+    (0, 6): (1, 5),
+    # size == 5:
+    (5, 0): (4, 1),
+    (0, 5): (1, 4),
+    (4, 1): (3, 2),
+    (1, 4): (2, 3),
+    # size == 4:
+    (4, 0): (3, 1),
+    (0, 4): (1, 3),
+    (3, 1): (2, 2),
+    (1, 3): (2, 2),
+    # size == 3:
+    (3, 0): (2, 1),
+    (0, 3): (1, 2),
+}
+
 
 def winloss_to_float(winloss):
-    if winloss.size <= 5:
-        return 0.5
-    ratio = winloss.ratio
-    if winloss.size <= 15:
-        if ratio > 0.5:
-            return 0.5 + (ratio - 0.5) * 0.5
-        if ratio < 0.5:
-            return 0.5 - (0.5 - ratio) * 0.5
-    return ratio
+    if (winloss.win_count, winloss.loss_count) in _regul_dict:
+        reg_win, reg_lose = _regul_dict[(winloss.win_count, winloss.loss_count)]
+        return WinLoss(win_count=reg_win, loss_count=reg_lose).ratio
+    if winloss.size < MIN_SIZE:
+        return None
+    return winloss.ratio
 
 
 def sized_value_to_float(sized_value):
-    if sized_value.size <= 5:
-        return 0.0
+    if sized_value.size < MIN_SIZE:
+        return None
     avg_value = sized_value.value
-    if sized_value.size <= 15:
+    if sized_value.size <= BONUS_REGUL_MAX_SIZE:
         return avg_value * 0.5
     return avg_value
 
@@ -53,11 +76,15 @@ def add_feature_dif_ratio(
     features, feature_name, sex, pid1, pid2, min_date=None, max_date=None
 ):
     value = get_dif_ratio(sex, pid1, pid2, min_date=min_date, max_date=max_date)
-    features.append(feature.Feature(name=feature_name, value=value, flip_value=-value))
+    if value is None:
+        feat = feature.RigidFeature(name=feature_name, value=value)
+    else:
+        feat = feature.Feature(name=feature_name, value=value, flip_value=-value)
+    features.append(feat)
 
 
-def get_dif_ratio(sex, pid1, pid2, min_date=None, max_date=None):
-    result1, result2 = st.WinLoss(), st.WinLoss()
+def get_dif_ratio(sex, pid1, pid2, min_date=None, max_date=None) -> Optional[float]:
+    result1, result2 = WinLoss(), WinLoss()
     for date, match_results in results_dict[sex].items():
         if min_date is not None and date < min_date:
             continue
@@ -73,6 +100,8 @@ def get_dif_ratio(sex, pid1, pid2, min_date=None, max_date=None):
                 result2.add_win(1)
             elif match_res.second_id == pid2:
                 result2.add_loss(1)
+    if result1.size < MIN_SIZE or result2.size < MIN_SIZE:
+        return None
     return winloss_to_float(result2) - winloss_to_float(result1)
 
 
@@ -80,11 +109,15 @@ def add_feature_dif_bonus(
     features, feature_name, sex, pid1, pid2, min_date=None, max_date=None
 ):
     value = get_dif_bonus(sex, pid1, pid2, min_date=min_date, max_date=max_date)
-    features.append(feature.Feature(name=feature_name, value=value, flip_value=-value))
+    if value is None:
+        feat = feature.RigidFeature(name=feature_name, value=value)
+    else:
+        feat = feature.Feature(name=feature_name, value=value, flip_value=-value)
+    features.append(feat)
 
 
-def get_dif_bonus(sex, pid1, pid2, min_date=None, max_date=None):
-    result1, result2 = st.Sumator(), st.Sumator()
+def get_dif_bonus(sex, pid1, pid2, min_date=None, max_date=None) -> Optional[float]:
+    result1, result2 = Sumator(), Sumator()
     for date, match_results in results_dict[sex].items():
         if min_date is not None and date < min_date:
             continue
@@ -100,13 +133,15 @@ def get_dif_bonus(sex, pid1, pid2, min_date=None, max_date=None):
                 result2.hit(match_res.games_dif)  # win value
             elif match_res.second_id == pid2:
                 result2.hit(-match_res.games_dif)  # loss value
+    if result1.size < MIN_SIZE or result2.size < MIN_SIZE:
+        return None
     svalue1 = rl.SizedValue.create_from_sumator(result1)
     svalue2 = rl.SizedValue.create_from_sumator(result2)
     return sized_value_to_float(svalue2) - sized_value_to_float(svalue1)
 
 
 def player_winloss(sex, ident, min_date=None, max_date=None, as_float=False):
-    result = st.WinLoss()
+    result = WinLoss()
     for date, match_results in results_dict[sex].items():
         if min_date is not None and date < min_date:
             continue
@@ -122,7 +157,7 @@ def player_winloss(sex, ident, min_date=None, max_date=None, as_float=False):
 
 def player_games_dif_average(sex, ident, min_date=None, max_date=None, as_float=False):
     """:returns SizedValue if as_float is False"""
-    sumer = st.Sumator()
+    sumer = Sumator()
     for date, match_results in results_dict[sex].items():
         if min_date is not None and date < min_date:
             continue
@@ -195,7 +230,7 @@ def _initialize_results_sex(sex, min_date=None, max_date=None):
 
 class DecidedSetPlayersProcessor(object):
     def __init__(self, sex):
-        self.dec_sets_from_player = defaultdict(st.WinLoss)
+        self.dec_sets_from_player = defaultdict(WinLoss)
         self.sex = sex
         self.actual_players = oncourt_players.players(sex)
 
@@ -273,7 +308,7 @@ def do_stat(sex=None):
         )
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
+        log.exception("{0} [{1}]".format(err, err.__class__.__name__))
         return 1
 
 
@@ -371,9 +406,11 @@ def parse_command_line_args():
 
 
 if __name__ == "__main__":
-    log.initialize(co.logname(__file__), "info", "info")
     args = parse_command_line_args()
     if args.stat:
         import make_stat
+
+        log.add('../log/decided_set.log', level='INFO',
+                rotation='10:00', compression='zip')
 
         sys.exit(do_stat(sex=None if args.sex == "both" else args.sex))

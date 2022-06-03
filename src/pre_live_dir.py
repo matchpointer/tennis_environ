@@ -44,5 +44,3 @@ def remove_all():
 
 def _filename(pre_live_name):
     return os.path.join(dirname, pre_live_name)
-
-

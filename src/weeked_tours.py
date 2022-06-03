@@ -1,13 +1,24 @@
 from collections import OrderedDict
 import datetime
+from typing import Tuple, List, Dict, OrderedDict as OrderedDictType
 
 import cfg_dir
-import log
+from loguru import logger as log
 import tournament as trmt
 import tennis_time as tt
 
-# sex -> OrderedDict{(year, weeknum) -> [tours]}
-__sex_dict = {}
+Sex_YearWeeknum_ToursList = Dict[
+    str,  # sex
+    OrderedDictType[
+        Tuple[
+            int,  # year
+            int  # weeknum
+        ],
+        List[trmt.Tournament]
+    ]
+]
+
+__sex_dict: Sex_YearWeeknum_ToursList = {}
 
 
 def _default_inited_dict(min_date, max_date):
@@ -42,7 +53,7 @@ def initialize_sex(
     with_pers_det=False,
 ):
     if sex in __sex_dict:
-        log.warn("reinit {} weeked tours".format(sex))
+        log.warning("reinit {} weeked tours".format(sex))
         del __sex_dict[sex]
     __sex_dict[sex] = _default_inited_dict(min_date, max_date)
     if split:
@@ -156,9 +167,9 @@ def year_weeknum_iter(sex):
 use_tail_tours_cache = False
 
 
-def tail_tours(sex, tail_weeks=2):
-    if use_tail_tours_cache and (sex, tail_weeks) in tail_tours.cache:
-        return tail_tours.cache[(sex, tail_weeks)]
+def tail_tours(sex, tail_weeks=3):
+    if use_tail_tours_cache and (sex, tail_weeks) in _tail_tours_cache:
+        return _tail_tours_cache[(sex, tail_weeks)]
     result = []
     passed_weeks = 0
     for idx, ywn in enumerate(sorted(year_weeknum_iter(sex), reverse=True)):
@@ -169,11 +180,19 @@ def tail_tours(sex, tail_weeks=2):
         if passed_weeks >= tail_weeks:
             break
     if use_tail_tours_cache:
-        tail_tours.cache[(sex, tail_weeks)] = result
+        _tail_tours_cache[(sex, tail_weeks)] = result
     return result
 
 
-tail_tours.cache = dict()  # (sex, tail_weeks) -> [tours]
+SexTailweeks_ToursList = Dict[
+    Tuple[
+        str,  # sex
+        int  # tail weeks num
+    ],
+    List[trmt.Tournament]
+]
+
+_tail_tours_cache: SexTailweeks_ToursList = dict()
 
 
 def all_tours(sex):

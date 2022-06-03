@@ -1,7 +1,7 @@
 import datetime
 import doctest
 
-import log
+from loguru import logger as log
 
 
 def date_generator(start, end):

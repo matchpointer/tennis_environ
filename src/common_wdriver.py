@@ -4,32 +4,24 @@ import gzip
 import io
 from typing import Optional
 
-import betcity_wdriver as bcdrv
 import flashscore_wdriver as fsdrv
 import file_utils as fu
+from score_company import ScoreCompany
 
 
-def wdriver(company_name: str, headless=False, faked=False):
-    """ company_name 'FS' (flashscore, default now);
-                     'BC' (betcity, not used now)
+def wdriver(company: ScoreCompany, headless=False, faked=False):
+    """
         faked: True than try experimental emulation without selenium.
                faked true mode is not work with flashscore site (selenium needed).
     """
-    if company_name == "BC":
-        return (
-            WDriverFaked(bcdrv.start_url())
-            if faked
-            else WDriverBetcity()
-        )
-    elif company_name == "FS":
-        return (
-            WDriverFaked(fsdrv.start_url())
-            if faked
-            else WDriverFlashscore(headless=headless)
-        )
+    return (
+        WDriverFaked(company.start_url())
+        if faked
+        else WDriverFlashscore(start_url=company.start_url(), headless=headless)
+    )
 
 
-class WDriver(object):
+class WDriver:
     def __init__(self):
         self.drv = None
 
@@ -49,17 +41,11 @@ class WDriver(object):
     def go_live_page(self):
         raise NotImplementedError()
 
-    def go_line_page(self):
-        raise NotImplementedError()
-
     def live_page_refresh(self):
         raise NotImplementedError()
 
     def current_page_refresh(self):
         raise NotImplementedError()
-
-    def is_mobile(self):
-        return False
 
     def save_page(self, filename, encoding="utf8"):
         fu.write(filename=filename, data=self.page(), encoding=encoding)
@@ -68,8 +54,12 @@ class WDriver(object):
         if self.drv is not None:
             self.drv.implicitly_wait(seconds)
 
+    def get_session_id(self):
+        if self.drv:
+            return self.drv.session_id
 
-class WDriverFaked(object):
+
+class WDriverFaked:
     def __init__(self, url):
         self.url = url
         self.content = None
@@ -112,9 +102,6 @@ class WDriverFaked(object):
     def current_page_refresh(self):
         self._do_download()
 
-    def is_mobile(self):
-        pass
-
     def save_page(self, filename, encoding="utf8"):
         fu.write(filename=filename, data=self.content, encoding=encoding)
 
@@ -122,55 +109,23 @@ class WDriverFaked(object):
         time.sleep(seconds)
 
 
-class WDriverBetcity(WDriver):
-    def __init__(self):
-        super(WDriverBetcity, self).__init__()
-
-    def start(self):
-        self.drv = bcdrv.start()
-        time.sleep(20)
-        bcdrv.switch_to_english(self.drv)
-
-    def goto_start(self):
-        bcdrv.goto_start(self.drv)
-
-    def stop(self):
-        bcdrv.stop(self.drv)
-
-    def go_live_page(self):
-        bcdrv.go_live_tennis_page(self.drv)
-
-    def go_line_page(self):
-        bcdrv.go_tennis_line_page(self.drv)
-
-    def live_page_refresh(self):
-        bcdrv.live_page_refresh(self.drv)
-
-    def current_page_refresh(self):
-        bcdrv.current_page_refresh(self.drv)
-
-    def is_mobile(self):
-        return bcdrv.is_mobile
-
-
 class WDriverFlashscore(WDriver):
-    def __init__(self, headless):
+    def __init__(self, start_url, headless):
         super(WDriverFlashscore, self).__init__()
+        self.start_url = start_url
         self.headless = headless
 
     def start(self):
-        self.drv = fsdrv.start(headless=self.headless)
+        """ constructs drv member """
+        self.drv = fsdrv.start(self.start_url, headless=self.headless)
 
     def goto_start(self):
-        fsdrv.goto_start(self.drv)
+        fsdrv.goto_start(self.start_url, self.drv)
 
     def stop(self):
         fsdrv.stop(self.drv)
 
     def go_live_page(self):
-        pass
-
-    def go_line_page(self):
         pass
 
     def live_page_refresh(self):

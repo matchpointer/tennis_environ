@@ -7,7 +7,7 @@ from collections import defaultdict
 import argparse
 import winsound
 
-import log
+from loguru import logger as log
 import common as co
 import cmds
 import weeked_tours
@@ -20,6 +20,7 @@ import common_wdriver
 from live import MatchStatus, skip_levels_default
 import tournament_misc as trmt_misc
 import flashscore
+from score_company import FS
 from interrupt_matches import is_interrupt
 
 
@@ -43,7 +44,7 @@ def fetch_initialize(sex=None, yearsnum=2):
             with_today=True,
         )
 
-    fsdrv = common_wdriver.wdriver(company_name="FS")
+    fsdrv = common_wdriver.wdriver(company=FS)
     fsdrv.start()
     time.sleep(5)
     return fsdrv
@@ -248,12 +249,14 @@ def parse_command_line_args():
 
 
 if __name__ == "__main__":
+    log.add('../log/detailed_score_fetch_fs.log', level='INFO',
+            rotation='10:00', compression='zip')
+
     args = parse_command_line_args()
     if not args.dayago1 and not args.dayago2:
         print("use --dayago1, --dayago2")
         sys.exit(1)
     else:
-        log.initialize(co.logname(__file__), file_level="info", console_level="info")
         assert args.dayago1 <= args.dayago2, "daysago bad interval [{}, {}]".format(
             args.dayago1, args.dayago2
         )

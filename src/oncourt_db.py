@@ -2,14 +2,16 @@
 модуль для облегчения работы с базой oncourt:
 дает константы минимальных дат турниров.
 get_name_level(...) - вернет (имя турнира, уровень турнира)
-                    например ('Rome', Level('masters'))
+                    например ('Rome', lev.masters)
 get_money(...) - извлечение денежной суммы (с помощью regexpr)
 """
 
 import re
 import datetime
+from typing import Optional, Tuple
 
 import common as co
+import lev
 
 MIN_WTA_TOUR_DATE = datetime.date(1997, 1, 1)
 MIN_ATP_TOUR_DATE = datetime.date(1990, 1, 1)
@@ -38,34 +40,32 @@ WTA_MONEY_TOURNAME_RE = re.compile(r"W(?P<money>\d\d\d?)(\+H)? (?P<name>[a-zA-Z]
 
 
 def remove_middle_cap_item_len2(text):
-    m_is_mid = remove_middle_cap_item_len2.BEGIN_MID_END_RE.match(text)
+    m_is_mid = _BEGIN_MID_END_RE.match(text)
     if m_is_mid:
         return m_is_mid.group("begin") + " " + m_is_mid.group("end")
     return text
 
 
-remove_middle_cap_item_len2.BEGIN_MID_END_RE = re.compile(
+_BEGIN_MID_END_RE = re.compile(
     r"^(?P<begin>[a-zA-Z].*)(?P<mid> [A-Z][A-Z], )(?P<end>[a-zA-Z].*)$"
 )
 
 
-def _atp_name_future_level(raw_name):
-    """if oncourt feature template then -> name, Level('future')"""
-    from tennis import Level
-
-    level = None
+def _atp_name_future_level(raw_name) -> Tuple[str, str]:
+    """if oncourt feature template then -> (name, lev.future)"""
+    level = ''
     m_fut_pref = ATP_COU_FUTURE_PREF_RE.match(raw_name)
     if m_fut_pref:
-        level = Level("future")
+        level = lev.future
         m_brackets_name = ATP_FUTURE_INBRACKETS_TOURNAME_RE.match(raw_name)
         if m_brackets_name:
             return m_brackets_name.group("name"), level
     m_money_name = ATP_MONEY_TOURNAME_RE.match(raw_name)
     if m_money_name:
-        return m_money_name.group("name"), Level("future")
+        return m_money_name.group("name"), lev.future
     if " #" in raw_name:
         suff_idx = raw_name.index(" #")
-        return raw_name[:suff_idx], Level("future")
+        return raw_name[:suff_idx], lev.future
     if (
         raw_name.endswith("-w1")
         or raw_name.endswith("-w2")
@@ -73,15 +73,13 @@ def _atp_name_future_level(raw_name):
         or raw_name.endswith("-w4")
     ):
         suff_idx = raw_name.index("-w")
-        return raw_name[:suff_idx], Level("future")
+        return raw_name[:suff_idx], lev.future
     return raw_name, level
 
 
-def _wta_name_future_level(raw_name, db_money=None):
-    """if oncourt feature template then -> name, Level('future')"""
-    from tennis import Level
-
-    name, level = raw_name, None
+def _wta_name_future_level(raw_name, db_money=None) -> Tuple[str, str]:
+    """if oncourt feature template then -> (name, lev.future) """
+    name, level = raw_name, ''
     money_from_name = 0
     m_itf_money_name = WTA_MONEY_TOURNAME_RE.match(raw_name)
     if m_itf_money_name:
@@ -89,13 +87,13 @@ def _wta_name_future_level(raw_name, db_money=None):
         money_from_name = int(m_itf_money_name.group("money")) * 1000
     money = max(0 if db_money is None else db_money, money_from_name)
     if 0 < money < MAX_WTA_FUTURE_MONEY:
-        level = Level("future")
+        level = lev.future
     elif MAX_WTA_FUTURE_MONEY <= money < MIN_WTA_MASTERS_MONEY and m_itf_money_name:
-        level = Level("chal")
+        level = lev.chal
     return name, level
 
 
-def _is_masters_cup(sex, raw_name, rank, tour_date: datetime.date):
+def _is_masters_cup(sex, raw_name, rank, tour_date: Optional[datetime.date]):
     if (
         sex == "atp"
         and tour_date is not None
@@ -116,52 +114,53 @@ def _is_masters_cup(sex, raw_name, rank, tour_date: datetime.date):
             (rank == 2 and tour_date.year <= 1998)
             or (rank == 3 and tour_date.year > 1998)
         )
-        and "Championships" in raw_name
-        and "Advanta Championships" not in raw_name
-        and "European Championships" not in raw_name
+        and (
+            "WTA Finals" in raw_name
+            or ("Championships" in raw_name
+                and "Advanta Championships" not in raw_name
+                and "European Championships" not in raw_name)
+        )
     ):
         return True
 
 
-def get_name_level(sex, raw_name, rank, money, date=None):
-    """ вернет (имя турнира, уровень турнира) например ('Rome', Level('masters')) """
-    from tennis import Level
-
+def get_name_level(sex, raw_name, rank, money: Optional[float], date=None) -> Tuple[str, str]:
+    """ вернет (имя турнира, уровень турнира) например ('Rome', lev.masters)) """
     if sex == "atp":
         name, level = _atp_name_future_level(raw_name)
     else:
         name, level = _wta_name_future_level(raw_name, money)
-    if level is not None:
+    if level:
         return name, level
 
     if "(juniors)" in name:
-        return name, Level("junior")
+        return name, lev.junior
     name_low = name.lower()
     if "atp cup" in name_low:
-        return "ATP Cup", Level("teamworld")
+        return "ATP Cup", lev.teamworld
     if "olympics" in name_low:
-        return "Olympics", Level("main")
+        return "Olympics", lev.main
     if "davis cup" in name_low or "fed cup" in name_low:
         if "world group" in name_low:
-            return remove_middle_cap_item_len2(name), Level("teamworld")
+            return remove_middle_cap_item_len2(name), lev.teamworld
         else:
-            return name, Level("team")
+            return name, lev.team
     if raw_name.endswith(" Challenger"):
-        return name[0 : -len(" Challenger")], Level("chal")
+        return name[0 : -len(" Challenger")], lev.chal
     if (
         sex == "wta"
         and rank == 0
         and money is not None
         and money < MAX_WTA_FUTURE_MONEY
     ):
-        return name, Level("future")
+        return name, lev.future
     if (
         sex == "wta"
         and rank == 2
         and money is not None
         and money >= MIN_WTA_MASTERS_MONEY
     ):
-        return name, Level("masters")
+        return name, lev.masters
     if (
         "Australian Open" in raw_name
         or "U.S. Open" in raw_name
@@ -169,14 +168,14 @@ def get_name_level(sex, raw_name, rank, money, date=None):
         or "Wimbledon" in raw_name
     ) and "Wildcard" not in raw_name:
         # here we use only name part before ' - New York/Melbourne/Paris/London'
-        return name.split(" - ")[0], Level("gs")
+        return name.split(" - ")[0], lev.gs
     if rank == 3:
-        return name, Level("masters")
+        return name, lev.masters
     if _is_masters_cup(sex, raw_name, rank, date):
-        return "Masters Cup", Level("masters")
+        return "Masters Cup", lev.masters
     if rank in (2, 4, 5) or "Hopman Cup" in raw_name:
-        return name, Level("main")
-    return name, Level("chal")
+        return name, lev.main
+    return name, lev.chal
 
 
 MONEY_RE = re.compile(
@@ -184,7 +183,7 @@ MONEY_RE = re.compile(
 )
 
 
-def get_money(text):
+def get_money(text) -> Optional[float]:
     """ извлечение денежной суммы (с помощью regexpr) """
     if not text:
         return None

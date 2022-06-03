@@ -28,7 +28,7 @@ import argparse
 
 import stopwatch
 
-import log
+from loguru import logger as log
 import common as co
 import feature
 import tennis_time as tt
@@ -41,23 +41,24 @@ import decided_set
 import weeked_tours
 from live import (
     MatchStatus,
-    get_events,
     LiveMatch,
-    initialize as live_initialize,
-    initialize_players_cache,
     skip_levels_work,
 )
+from score_company import get_company
 import pre_live_dir
+import after_tie_perf_stat
 from stat_cont import WinLoss
 from report_line import SizedValue
 import atfirst_after
+import advantage_tie_ratio
 
 try:
-    import automate2
+    import automate
 except ImportError:
-    automate2 = None
+    automate = None
 
-_DEBUG_MATCH_NAME = ""  # sample: "Samsonova L. - Konjuh A."
+
+_DEBUG_MATCH_NAME = ""  # "Coppejans K. - Gerch L."
 
 
 # (sex, tour_name) -> (tour_id, level, surface)
@@ -77,7 +78,7 @@ class OncourtUpdateScript(Script):
         super(OncourtUpdateScript, self).__init__(stopwatch.OverTimer(wait_timeout))
 
     def work(self):
-        result = automate2.oncourt_update_connect()
+        result = automate.oncourt_update_connect()
         if result:
             time.sleep(7)
             initialize()
@@ -87,6 +88,16 @@ class OncourtUpdateScript(Script):
 
 
 class MatchDataScript(Script):
+    important_features = (
+        'fst_plr_tour_adapt',
+        'snd_plr_tour_adapt',
+        'fst_fatigue',
+        'snd_fatigue',
+        'decset_ratio_dif',
+        'fst_win_coef',
+        'snd_win_coef',
+    )
+
     def __init__(self, wait_timeout, prelive_threshold):
         """ prelive_threshold на сколько секунд от настоящего момента
             смотрим в будущее для отбора матчей, которые скоро начнуться.
@@ -122,6 +133,30 @@ class MatchDataScript(Script):
 
     @staticmethod
     def prepare_dict(match):
+        """ for serializing: return dct with attrs of match (features and some others)
+            for serialize in json file """
+
+        def prep_advleft_tie_ratio(name: str):
+            """ input name sample: 'sd_tie_ratio' output key sample: 'advleft_' + name """
+            fst_name = f"fst_{name}"
+            snd_name = f"snd_{name}"
+            fst_feat = co.find_first(match.features, lambda f: f.name == fst_name)
+            snd_feat = co.find_first(match.features, lambda f: f.name == snd_name)
+            if (
+                fst_feat is not None
+                and snd_feat is not None
+                and isinstance(fst_feat.value, (SizedValue, WinLoss))
+                and isinstance(snd_feat.value, (SizedValue, WinLoss))
+            ):
+                adv_side = advantage_tie_ratio.get_adv_side(
+                    sex=match.sex, setpref=name[:3],
+                    fst_sv=fst_feat.value, snd_sv=snd_feat.value)
+                newname = f'{advantage_tie_ratio.ADV_PREF}{name}'
+                if adv_side is None:
+                    dct[newname] = None
+                else:
+                    dct[newname] = adv_side.is_left()
+
         def prep_simple_features():
             for feat in match.features:
                 if isinstance(feat, feature.RigidFeature):
@@ -194,21 +229,45 @@ class MatchDataScript(Script):
         if match.rnd is not None:
             dct["rnd"] = str(match.rnd)
         if match.features:
+            prep_plr_feature("fatigue")
+            prep_plr_feature("plr_tour_adapt")
+            prep_plr_feature("prevyear_tour_rnd")
+            prep_plr_feature("set2win_after_set1loss")
+            prep_plr_feature("set2win_after_set1win")
+            prep_plr_feature("decided_begin_sh-3")
+            prep_plr_feature("decided_keep_sh-3")
+            prep_plr_feature("decided_recovery_sh-3")
+            prep_plr_feature("trail")
+            prep_plr_feature("choke")
             prep_plr_feature("absence")
             prep_plr_feature("retired")
-            # other features temporary removed
+            prep_plr_feature(after_tie_perf_stat.ASPECT_UNDER)
+            prep_plr_feature(after_tie_perf_stat.ASPECT_PRESS)
+            prep_plr_feature("pastyear_nmatches")
+            prep_plr_sv_feature("sd_tie_ratio")
+            prep_advleft_tie_ratio("sd_tie_ratio")
 
+        dct["decset_ratio_dif"] = match.decset_ratio_dif
+        dct["decset_bonus_dif"] = match.decset_bonus_dif
+        dct["h2h_direct"] = match.h2h_direct
+        if match.offer and match.offer.win_coefs:
+            dct["fst_win_coef"] = match.offer.win_coefs.first_coef
+            dct["snd_win_coef"] = match.offer.win_coefs.second_coef
+        dct["fst_draw_status"] = (
+            match.first_draw_status if match.first_draw_status is not None else "")
+        dct["snd_draw_status"] = (
+            match.second_draw_status if match.second_draw_status is not None else "")
+        if match.fst_last_res:
+            dct["fst_last_res"] = match.fst_last_res.week_results_list
+        if match.snd_last_res:
+            dct["snd_last_res"] = match.snd_last_res.week_results_list
         return dct
 
     def check_dict(self, dct, match):
-        if match.level in ("main", "gs", "masters"):
-            none_cnt = sum([1 for v in dct.values() if v is None])
-            if none_cnt > 0 or len(dct) < 16:
-                log.warn(
-                    "prelivedct check none_cnt: {} len: {} in {}".format(
-                        none_cnt, len(dct), match.name
-                    )
-                )
+        absent_names = [fn for fn in self.important_features if dct.get(fn) is None]
+        if absent_names:
+            log.warning(f"prelivedct check: {match.name}"
+                        f" ABSENT: {', '.join(absent_names)}")
 
     def prepare(self, match):
         dct = self.prepare_dict(match)
@@ -219,8 +278,8 @@ class MatchDataScript(Script):
     def work(self):
         tbeg = time.perf_counter()
         _drv.live_page_refresh()
-        events = get_events(
-            _drv.page(),
+        events = get_company(args.company_name).fetch_events(
+            webpage=_drv.page(),
             skip_levels=skip_levels_work(),
             match_status=MatchStatus.scheduled,
         )
@@ -241,7 +300,7 @@ class MatchDataScript(Script):
                     if tour is not None:
                         for match in event.matches:
                             if self.is_match_towork(match):
-                                match.define_players("FS", event.sex)
+                                match.define_players(event.sex)
                                 # weeked_tours may updated:
                                 match.fill_details_tried = False
                                 match.fill_details(tour)
@@ -250,7 +309,7 @@ class MatchDataScript(Script):
                 else:
                     # two next statements makes more long algo
                     event.define_features()
-                    event.define_players(company_name="FS")
+                    event.define_players()
                     event.define_level()
                     if event.tour_info is not None and event.tour_id is not None:
                         tour = co.find_first(
@@ -296,19 +355,21 @@ def get_min_timer_script(scripts) -> Script:
 
 def main(scripts):
     global _drv
-    _drv = wdriver(company_name="FS", headless=True)
+    company = get_company(args.company_name)
+    _drv = wdriver(company=company, headless=True)
     _drv.start()
     _drv.go_live_page()
-    initialize_players_cache(_drv.page())
+    company.initialize_players_cache(_drv.page())
 
-    atfirst_after.initialize_day(
-        get_events(
-            _drv.page(),
-            skip_levels=skip_levels_work(),
-            match_status=MatchStatus.scheduled,
-        ),
-        datetime.date.today(),
-    )
+    if not atfirst_after.is_initialized_day(datetime.date.today()):
+        atfirst_after.initialize_day(
+            company.fetch_events(
+                webpage=_drv.page(),
+                skip_levels=skip_levels_work(),
+                match_status=MatchStatus.scheduled,
+            ),
+            datetime.date.today(),
+        )
 
     log.info("begin main cycle")
     exiting = False
@@ -322,7 +383,7 @@ def main(scripts):
             script.timer.restart()
             first_exec = False
         except co.TennisError as err:
-            log.error(str(err), exc_info=True)
+            log.exception(str(err))
             break
     _drv.stop()
     _drv = None
@@ -332,7 +393,7 @@ def make_scripts():
     result = [
         MatchDataScript(wait_timeout=60 * 12, prelive_threshold=60 * 30),
     ]
-    if args.oncourt and automate2 is not None:
+    if args.oncourt and automate is not None:
         result.append(OncourtUpdateScript(wait_timeout=2000))
     return result
 
@@ -376,7 +437,7 @@ def initialize():
 
 def parse_command_line_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--company_name", choices=["BC", "FS"], default="FS")
+    parser.add_argument("--company_name", choices=["T24", "FS"], default="T24")
     parser.add_argument("--cleardir", action="store_true")
     parser.add_argument("--oncourt", action="store_true")
     parser.add_argument("--dump_tail_tours", action="store_true")
@@ -384,8 +445,10 @@ def parse_command_line_args():
 
 
 if __name__ == "__main__":
+    log.remove()
+    log.add(sys.stderr, level='INFO')
+    log.add('../log/pre_live.log', level='INFO', rotation='10:00', compression='zip')
     args = parse_command_line_args()
-    log.initialize(co.logname(__file__), file_level="info", console_level="info")
     log.info("started with company_name {}".format(args.company_name))
     dba.open_connect()
     oncourt_players.initialize(yearsnum=1.2)
@@ -397,8 +460,17 @@ if __name__ == "__main__":
     ratings.Rating.register_rtg_name("elo")
     ratings.Rating.register_rtg_name("elo_alt")
     mon_date = tt.past_monday_date(datetime.date.today())
+    # tie_stat.initialize_results(sex=None,
+    #                             min_date=mon_date - datetime.timedelta(days=365 * 3),
+    #                             max_date=None)
+    # impgames_stat.initialize_results(
+    #     'wta', min_date=datetime.date.today() - datetime.timedelta(
+    #         days=impgames_stat.HISTORY_DAYS))
+    # impgames_stat.initialize_results(
+    #     'atp', min_date=datetime.date.today() - datetime.timedelta(
+    #         days=impgames_stat.HISTORY_DAYS))
     initialize()
-    live_initialize()
+    get_company(args.company_name).initialize()
     if args.cleardir:
         pre_live_dir.remove_all()
     if args.dump_tail_tours:

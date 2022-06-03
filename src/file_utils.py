@@ -5,7 +5,11 @@ from collections import defaultdict
 import json
 import pickle
 import hashlib
-import win32api
+from typing import DefaultDict
+try:
+    import win32api
+except ImportError:
+    win32api = None
 
 import common as co
 
@@ -50,12 +54,12 @@ def write(filename, data, encoding="utf8"):
 def single_write(filename, data, encoding="utf8"):
     """для кокретного filename пишем только первый раз,
     остальные попытки игнорируются в оставшееся время исполнения"""
-    if not single_write.writed_from_filename[filename]:
+    if not _writed_from_filename[filename]:
         write(filename, data, encoding=encoding)
-        single_write.writed_from_filename[filename] = True
+        _writed_from_filename[filename] = True
 
 
-single_write.writed_from_filename = defaultdict(lambda: False)
+_writed_from_filename: DefaultDict[str, bool] = defaultdict(lambda: False)
 
 
 def pickle_object(obj, filename):
@@ -69,7 +73,7 @@ def unpickle_object(filename):
 
 
 def get_file_version(filename):
-    if os.path.isfile(filename):
+    if os.path.isfile(filename) and win32api:
         info = win32api.GetFileVersionInfo(filename, "\\")
         ms = info["ProductVersionMS"]
         ls = info["ProductVersionLS"]
@@ -183,6 +187,14 @@ def is_empty_folder(folder):
     for root, dirs, files in os.walk(folder):
         return len(dirs) == 0 and len(files) == 0
     return True
+
+
+def is_non_zero_file(filename: str):
+    if not os.path.isfile(filename) or os.path.getsize(filename) == 0:
+        return False
+    # if file is damaged then very likely it consist of zero bytes only
+    with open(filename, mode='rb') as fd:
+        return any((char != 0 for char in fd.read()))
 
 
 def find_files_in_folder(folder, filemask="*", recursive=True):
@@ -321,3 +333,4 @@ def ora_error_in_file(filename, always_check_last_line=False, ignore_codes=None)
     elif not is_error and not is_last_line_ok and always_check_last_line:
         is_error = True  # implicit errors without displayed ORA error code
     return is_error
+

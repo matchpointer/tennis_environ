@@ -106,7 +106,7 @@ def write_bf_live_coef_matched(date: datetime.date, sex: str, fst_id: int, snd_i
 
 
 def write_predict(match, case_name: str, back_side: Side, proba: float,
-                  comments: str = '', rejected: int = -1):
+                  comments: str = '', rejected: int = -1, clf_hash: str = None):
     if predicts_db_hnd is None:
         return
     if back_side.is_left():
@@ -136,6 +136,7 @@ def write_predict(match, case_name: str, back_side: Side, proba: float,
         oppo_name=oppo_name,
         book_start_chance=book_start_chance,
         rejected=rejected,
+        clf_hash=clf_hash,
     )
     predicts_db_hnd.insert_obj(rec)
     _commit(bytime=False)
@@ -186,11 +187,20 @@ def run_stat():
     book_start_chances = []
     profiter = FlatLimitedProfiter(start_money=9)
     predicts_db_hnd.query_predicts()
+    min_date = None
+    if args.min_date is not None:
+        min_date = datetime.datetime.strptime(args.min_date, "%Y-%m-%d").date()
     for rec in predicts_db_hnd.records:
         if (
             rec.predict_result in (0, 1)
             and (not args.sex or (args.sex == rec.sex))
-            and (not args.casename or (rec.case_name == args.casename))
+            and (not args.comment or (args.comment in rec.comments))
+            and (not args.clf_hash
+                 or (rec.clf_hash is not None and args.clf_hash in rec.clf_hash))
+            and (min_date is None or rec.date >= min_date)
+            and (not args.casename or (rec.case_name.startswith(args.casename)))
+            and (not args.level or (rec.level == args.level))
+            and (not args.surface or (rec.surface == args.surface))
             and (args.rejected is None or
                  (args.rejected == 1 and rec.rejected == args.rejected) or
                  (args.rejected == 0 and rec.rejected in (-1, 0))
@@ -269,17 +279,46 @@ def run_matchresult_flags():
                 print(f"NOT FOUND RES {rec.date} {rec.back_name} {rec.oppo_name}")
                 n_err += 1
             else:
-                wid, lid, res_scr = res
+                win_pid, lose_pid, res_scr = res
+                n_full_sets = res_scr.sets_count(full=True)
                 if res_scr.retired:
                     rec.back_win_match = -2
                 else:
-                    rec.back_win_match = int(rec.back_id == wid)
+                    rec.back_win_match = int(rec.back_id == win_pid)
 
                 if rec.predict_result == PredictResult.empty:
-                    if rec.case_name == 'secondset_00':
-                        rec.predict_result = int(res_scr.sets_count() > 2)
+                    if rec.case_name.startswith('open'):
+                        trg_set_idx = 0
+                    elif rec.case_name.startswith('secondset'):
+                        trg_set_idx = 1
+                    elif rec.case_name.startswith('decided'):
+                        if rec.sex == 'wta':
+                            trg_set_idx = 2
+                        else:
+                            bo5 = (rec.tour_name in ('Australian Open', 'australian-open',
+                                                     'French Open', 'french-open',
+                                                     'Wimbledon', 'wimbledon',
+                                                     'U.S. Open', 'us-open')
+                                   and rec.rnd not in ('q-First', 'q-Second', 'Qualifying')
+                                   )
+                            trg_set_idx = 4 if bo5 else 2
                     else:
-                        rec.predict_result = int(rec.back_id == wid)
+                        n_err += 1
+                        print(f"unexpected case_name: {rec.case_name}")
+                        continue
+                    trg_set = res_scr[trg_set_idx] if trg_set_idx < n_full_sets else None
+                    if trg_set is None:
+                        if res_scr.retired:
+                            rec.predict_result = -2
+                        else:
+                            print(f"NOT calc {rec.case_name} {rec.date} {rec.back_name}"
+                                  f" {rec.oppo_name} scr: {res_scr}"
+                                  f" trg_set_idx: {trg_set_idx}")
+                            n_err += 1  # ok if match is suspended
+                    else:
+                        is_set_win_left = trg_set[0] >= trg_set[1]
+                        is_back_left = rec.back_id == win_pid
+                        rec.predict_result = int(is_set_win_left is is_back_left)
                 n_ok += 1
     if n_ok > 0:
         predicts_db_hnd.commit()
@@ -342,8 +381,13 @@ if __name__ == "__main__":
         parser.add_argument("--run_stat", action="store_true")
         parser.add_argument("--sex", type=str, default="")
         parser.add_argument("--casename", type=str, default="")
+        parser.add_argument("--level", type=str, default="")
+        parser.add_argument("--surface", type=str, default="")
         parser.add_argument("--minproba", type=float, default=None)
         parser.add_argument("--maxproba", type=float, default=None)
+        parser.add_argument("--min_date", type=str, default=None)
+        parser.add_argument("--comment", type=str, default="")
+        parser.add_argument("--clf_hash", type=str, default="")
 
         parser.add_argument("--rejected", dest="rejected", action="store_true")
         parser.add_argument("--no-rejected", dest="rejected", action="store_false")

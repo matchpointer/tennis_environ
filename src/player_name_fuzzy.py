@@ -1,6 +1,7 @@
 from fuzzywuzzy import fuzz
 
-DEFAULT_MIN_RATIO = 63
+RESEMBLE_MIN_DEGREE = 63
+VERY_RESEMBLE_DEGREE = 85
 
 
 def compare_ratio(name1, name2):

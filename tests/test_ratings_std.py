@@ -1,7 +1,7 @@
 import unittest
 import datetime
 
-import log
+from loguru import logger as log
 import common as co
 import dba
 from ratings_std import top_players_pts_list, _sex_dict, get_rank, get_pts, initialize
@@ -90,5 +90,4 @@ class RatingsTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    log.initialize(co.logname(__file__, test=True), "debug", None)
     unittest.main()

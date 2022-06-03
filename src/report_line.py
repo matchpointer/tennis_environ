@@ -2,7 +2,7 @@ import os
 import re
 import copy
 from collections import defaultdict, Counter
-from typing import Optional
+from typing import Optional, Any, DefaultDict
 
 from side import Side
 import common as co
@@ -10,10 +10,18 @@ import cfg_dir
 import dict_tools
 
 
-# dict: keyi -> Counter
-#               Counter: valuei -> int
+Pid_Key_Counter = DefaultDict[
+    int,  # player_id
+    DefaultDict[
+        Any,  # keyi
+        Counter  # valuei -> int
+    ]
+]
+
 # если этот объект пуст, то режим работы 'сегодня' (читать из файла)
-dict_from_pid = defaultdict(lambda: defaultdict(Counter))
+dict_from_pid: Pid_Key_Counter = defaultdict(
+    lambda: defaultdict(Counter)
+)
 
 
 def player_total_report_lines(sex, player, total_value, is_less=True, keys=None):
@@ -157,22 +165,31 @@ def make_get_adv_side(
         fst_val, snd_val = fst_sv.value, snd_sv.value
         if fst_val is None or snd_val is None:
             return None
+        fst_bln_val, snd_bln_val = None, None
         if min_adv_size == min_oppo_size:
-            fst_val, snd_val = co.twoside_values(fst_sv, snd_sv)
+            fst_bln_val, snd_bln_val = co.twoside_values(fst_sv, snd_sv)
+
         if (
             fst_sv.size >= min_adv_size
             and snd_sv.size >= min_oppo_size
-            and fst_val >= min_adv_value
+            and (
+                (fst_bln_val is not None and fst_bln_val >= min_adv_value)
+                or (fst_bln_val is None and fst_val >= min_adv_value)
+            )
             and snd_val <= max_oppo_value
         ):
             return Side('LEFT')
         if (
             fst_sv.size >= min_oppo_size
             and snd_sv.size >= min_adv_size
+            and (
+                (snd_bln_val is not None and snd_bln_val >= min_adv_value)
+                or (snd_bln_val is None and snd_val >= min_adv_value)
+            )
             and fst_val <= max_oppo_value
-            and snd_val >= min_adv_value
         ):
             return Side('RIGHT')
+        return None
 
     return get_adv_side
 

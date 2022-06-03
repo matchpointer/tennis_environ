@@ -131,12 +131,12 @@ def errors_count(word1st, word2nd):
     return err_count
 
 
-def errors_count_after_symb_del(ward1st, ward2nd):
+def errors_count_after_symb_del(word1st, word2nd):
     """ " must be: len(ward1st) >= len(ward2nd)"""
-    size1st = len(ward1st)
+    size1st = len(word1st)
     err_count_min = size1st
     for i in range(size1st):
-        err_count = errors_count(ward1st[0:i] + ward1st[i + 1 :], ward2nd)
+        err_count = errors_count(word1st[0:i] + word1st[i + 1:], word2nd)
         if err_count < err_count_min:
             err_count_min = err_count
         if err_count_min == 0:

@@ -1,25 +1,23 @@
 import re
 
 import common as co
-import log
+from loguru import logger as log
 import oncourt_players
 import words
 
+_COMPANY_KEY = "flashscore"
 
-def identify_player(company_name, sex, player_short_name, cou=None):
-    if company_name == "FS":
-        company_key = "flashscore"
-    else:
-        raise co.TennisError("unexpected company_name '{}'".format(company_name))
+
+def identify_player(sex, player_short_name, cou=None):
     if cou is None:
         player = co.find_first(
             oncourt_players.players(sex),
-            lambda p: p.disp_name(company_key) == player_short_name,
+            lambda p: p.disp_name(_COMPANY_KEY) == player_short_name,
         )
     else:
         player = co.find_first(
             oncourt_players.players(sex),
-            lambda p: p.cou == cou and p.disp_name(company_key) == player_short_name,
+            lambda p: p.cou == cou and p.disp_name(_COMPANY_KEY) == player_short_name,
         )
     if player is not None:
         return player
@@ -27,7 +25,7 @@ def identify_player(company_name, sex, player_short_name, cou=None):
     return abbrname.find_player(oncourt_players.players(sex), sex)
 
 
-class AbbrName(object):
+class AbbrName:
     """Исходя из сокр. имени с помощью рег. выр-ния ищет полное имя игрока.
     Основано на разборе до 5 частей: last1 last2 last3 init1 init2
     пока не можем например следующее (тут и last4):
@@ -145,7 +143,7 @@ class AbbrName(object):
         found_txt = "NOT FOUND"
         if len(found_players) > 1:
             found_txt = "AMBIGIOUS " + "\n\t".join([p.name for p in found_players])
-        log.warn(
+        log.warning(
             "fail {} get name by abbr '{}' cause: {}".format(
                 "" if sex is None else sex, self.abbr, found_txt
             )

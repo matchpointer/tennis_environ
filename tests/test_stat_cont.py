@@ -14,8 +14,8 @@ import score as sc
 
 class WinLossTest(unittest.TestCase):
     def test_compare(self):
-        wl1 = WinLoss.create_from_text("41.2% (17)")
-        wl2 = WinLoss.create_from_text("37.8% (339)")
+        wl1 = WinLoss.from_text("41.2% (17)")
+        wl2 = WinLoss.from_text("37.8% (339)")
         self.assertTrue(wl1 > wl2)
         self.assertTrue(wl2 < wl1)
         self.assertEqual([wl2, wl1], sorted([wl1, wl2]))

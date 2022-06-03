@@ -4,16 +4,19 @@ from collections import defaultdict, namedtuple
 from operator import itemgetter
 import copy
 from contextlib import closing
+from typing import Dict, Tuple, Optional, DefaultDict
 
 import tkinter.ttk
 
 import dba
 import common as co
 import tennis_time as tt
-import log
+from loguru import logger as log
+from surf import make_surf
 from stat_cont import create_summator_histogram, WinLoss, Sumator
 import cfg_dir
-from tennis import soft_level, Round, Surface
+from tennis import Round
+from lev import soft_level
 import oncourt_players
 import dict_tools
 from report_line import SizedValue
@@ -53,7 +56,7 @@ class StatSide(object):
             if in_ratio is not None and fst_ratio is not None and snd_ratio is not None:
                 res_ratio = in_ratio * fst_ratio + (1.0 - in_ratio) * snd_ratio
                 res_size = self.first_service_win.size + self.second_service_win.size
-                return WinLoss.create_from_ratio(res_ratio, res_size)
+                return WinLoss.from_ratio(res_ratio, res_size)
 
     def other_receive_win(self):
         """общая результативность на приеме для оппонента этой стороны"""
@@ -72,11 +75,19 @@ class StatSide(object):
             return self.second_service_win.reversed()
 
 
-class MatchStat(object):
-    fst_srv_in = defaultdict(lambda: None)
+class MatchStat:
+    SexSurf_OptFloat = Dict[
+        Tuple[
+            str,  # sex
+            str  # surface
+        ],
+        Optional[float]  # value from [0...1]
+    ]
+
+    fst_srv_in: SexSurf_OptFloat = defaultdict(lambda: None)
 
     @staticmethod
-    def generic_first_service_in(sex, surface):
+    def generic_first_service_in(sex, surface) -> Optional[float]:
         """0 <= return <= 1"""
         result = MatchStat.fst_srv_in[(sex, surface)]
         if result is not None:
@@ -270,13 +281,33 @@ class MatchStat(object):
 #  player_min_id ~ MatchStat.left_side, player_max_id ~ MatchStat.right_side
 StorageKey = namedtuple("StorageKey", "tour_id rnd player_min_id player_max_id")
 
-# sex->
-#       OrderedDefaultDict{(year,weeknum) -> defaultdict{storkey -> MatchStat}}
-#
-_sex_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: None)))
+Sex_YearWeeknum_Storkey_OptMstat = DefaultDict[
+    str,  # sex
+    DefaultDict[  # will ordered?
+        Tuple[
+            int,  # year
+            int  # week num
+        ],
+        DefaultDict[
+            StorageKey,
+            Optional[MatchStat]
+        ]
+    ]
+]
 
-# sex-> tour_id -> surface
-_sex_surf_dict = defaultdict(lambda: defaultdict(lambda: None))
+_sex_dict: Sex_YearWeeknum_Storkey_OptMstat = defaultdict(
+    lambda: defaultdict(lambda: defaultdict(lambda: None))
+)
+
+Sex_Tourid_OptSurface = DefaultDict[
+    str,  # sex
+    DefaultDict[
+        int,  # tour_id
+        Optional[str]  # surface
+    ]
+]
+
+_sex_surf_dict: Sex_Tourid_OptSurface = defaultdict(lambda: defaultdict(lambda: None))
 
 
 def initialize(
@@ -388,7 +419,7 @@ def __initialize_sex_surface(sex, min_date=None, max_date=None):
     )
     with closing(dba.get_connect().cursor()) as cursor:
         for (tour_id, surf_txt) in cursor.execute(sql):
-            _sex_surf_dict[sex][tour_id] = str(Surface(surf_txt))
+            _sex_surf_dict[sex][tour_id] = make_surf(surf_txt)
 
 
 def __initialize_sex(sex, min_date=None, max_date=None, time_reverse=False):
@@ -501,7 +532,7 @@ def extract_results(fun_name, match):
     return fun()
 
 
-class Generic(object):
+class Generic:
     def __init__(self):
         self.dict_from_sexfun = {}
         for sex in ("wta", "atp"):

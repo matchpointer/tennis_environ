@@ -33,9 +33,9 @@ some notations:
 """
 import os
 from collections import defaultdict
-from typing import Optional
+from typing import Optional, Union
 
-from clf_decided_00_apply import load_variants
+import df_util
 
 CMD_ENVIRON = os.environ
 CMD_ENVIRON["OMP_NUM_THREADS"] = "1"
@@ -44,32 +44,41 @@ import pandas as pd
 import pprint
 
 from catboost import CatBoostClassifier
-from sklearn.metrics import accuracy_score, precision_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score, precision_score, roc_auc_score, average_precision_score
+)
 
-from clf_decided_00_variants import (
-    var_atp_main_clr_1f,
+from clf_decided_00dog_variants import (
+    var_atp_main_clr_rtg500_300_1ffrs,
 )
 import cfg_dir
-import log
+from loguru import logger as log
+import lev
 import common as co
+import surf
 import clf_common as cco
 import stat_cont as st
 import clf_cat_tools
 import clf_columns
 
-MODEL = "decided_00"
-LABEL_NAME = "opener_lose_match"
+LABEL_NAME = "dog_win_match"
 
-DEFAULT_RESERVE_SIZE = 0.10
+DEFAULT_RESERVE_SIZE = 0.085  # for wta chal, usial ->   # 0.08
 RESERVE_RANDOM_STATE = 466
 DEFAULT_EVAL_SIZE = 0.17
-DEFAULT_TEST_SIZE = 0.20
-CHRONO_SPLIT = True
+DEFAULT_TEST_SIZE = 0.17  # for wta chal 0.20, usial ->  # 0.17
+# если CHRONO_SPLIT задан то все наборы упорядочены по росту 'date'
+# и разбиения тоже (на 3: train, eval, test), или (на 2: train, test)
+CHRONO_SPLIT = False
 DEFAULT_CLASSIFIER = CatBoostClassifier
 
-metric_name = "Accuracy"
 random_seed = 44
 early_stopping_rounds = None
+
+
+train_variants = [
+    var_atp_main_clr_rtg500_300_1ffrs,
+]
 
 
 def add_fst_s2choke_adv(tbl: pd.DataFrame):
@@ -121,63 +130,22 @@ def add_fst_s2choke_adv(tbl: pd.DataFrame):
 
 
 def add_columns(sex: str, tbl: pd.DataFrame):
-    clf_columns.replace_column_empty_value(
-        tbl, column_name="h2h_direct", replace_value=0.0
-    )
-    clf_columns.add_column(tbl, "rnd", lambda r: cco.rnd_code(r["rnd_text"]))
-    clf_columns.add_column(
-        tbl, "rnd_stage", lambda r: cco.rnd_stage(r["rnd_text"], r["raw_level_text"])
-    )
-    clf_columns.add_column(tbl, "level", lambda r: cco.level_code(r["level_text"]))
-    clf_columns.add_column(
-        tbl, "surface", lambda r: cco.surface_code(r["surface_text"])
-    )
     clf_columns.make_decided_win_side_by_score(
         tbl, side=co.RIGHT, new_name="decided_win_snd_plr_by_score"
     )
     add_fst_s2choke_adv(tbl)
-    tbl["dif_srv_ratio"] = tbl["sspd_snd_srv_ratio"] - tbl["sspd_fst_srv_ratio"]
-
-    tbl["dif_service_win"] = tbl["snd_service_win"] - tbl["fst_service_win"]
-    tbl["dif_receive_win"] = tbl["snd_receive_win"] - tbl["fst_receive_win"]
-
-    tbl["dif_age"] = tbl["snd_age"] - tbl["fst_age"]
-    clf_columns.add_column(
-        tbl, "avg_age", lambda r: (r["fst_age"] + r["snd_age"]) * 0.5
-    )
-    tbl["dif_fatigue"] = tbl["snd_fatigue"] - tbl["fst_fatigue"]
-
-    tbl["dif_elo_pts"] = tbl["snd_elo_pts"] - tbl["fst_elo_pts"]
-    tbl["dif_surf_elo_pts"] = tbl["snd_surf_elo_pts"] - tbl["fst_surf_elo_pts"]
-
-    tbl["dif_elo_alt_pts"] = tbl["snd_elo_alt_pts"] - tbl["fst_elo_alt_pts"]
-    tbl["dif_surf_elo_alt_pts"] = (
-        tbl["snd_surf_elo_alt_pts"] - tbl["fst_surf_elo_alt_pts"]
-    )
 
 
 def drop_nan_labels(sex: str, data: pd.DataFrame):
     todrop = [
-        "sspd_absent_games",
+        "dset_ratio_dif",
         "fst_bet_chance",
-        "spd_fst_lastrow_games",
-        "sspd_fst_srv_ratio",
-        "sspd_snd_srv_ratio",
-        "fst_service_win",
-        "snd_service_win",
-        "fst_receive_win",
-        "snd_receive_win",
-        "decided_win_by_set2_winner",
-        "fst_age",
-        "snd_age",
-        "fst_fatigue",
-        "snd_fatigue",
     ]
     data.dropna(subset=todrop, inplace=True)
 
 
 def drop_seldom_score(df: pd.DataFrame) -> None:
-    cco.drop_by_condition(
+    df_util.drop_by_condition(
         df,
         lambda d: (
             (  # seldom scores ala 6-0(1), 0-6
@@ -201,14 +169,22 @@ def drop_seldom_score(df: pd.DataFrame) -> None:
 
 
 def drop_by_condition(variant: cco.Variant, df: pd.DataFrame) -> None:
-    cco.drop_by_condition(
+    max_dog_chance, min_fav_chance = cco.dogfav_limit_chances(
+        variant.sex, variant.exist_chal())
+    df_util.drop_by_condition(
         df,
         lambda d: (
             (d["sspd_absent_games"] >= 3)
             | (d["sspd_empty_games"] >= 4)
             # drop tough decset (exist 7-5, 7-6, 8-6 and so on) as noisy:
-            | ((d["s3_fst_games"] + d["s3_snd_games"]) >= 12)
+            # | ((d["s3_fst_games"] + d["s3_snd_games"]) >= 12)
+            # drop only tie decset with 7-6:
+            # | ((d["s3_fst_games"] == 7) & (d["s3_snd_games"] == 6))
+            # | ((d["s3_fst_games"] == 6) & (d["s3_snd_games"] == 7))
             | (d["best_of_five"] == 1)
+            | (d["rnd_text"] == "Final")
+            | ((d["fst_bet_chance"] >= max_dog_chance)
+               & (d["fst_bet_chance"] <= min_fav_chance))
         ),
     )
     variant.drop_by_condition(df)
@@ -216,52 +192,47 @@ def drop_by_condition(variant: cco.Variant, df: pd.DataFrame) -> None:
 
 def primary_edit(variant: cco.Variant, df: pd.DataFrame):
     drop_nan_labels(variant.sex, df)
-    cco.drop_rank_std_any_below_or_wide_dif(
+    df_util.drop_rank_std_any_below_or_wide_dif(
         df, cco.RANK_STD_BOTH_ABOVE, cco.RANK_STD_MAX_DIF
     )
     clf_columns.edit_column_value(df, "rnd_text", cco.unified_rnd_value)
+    clf_columns.add_column(df, "rnd", lambda r: cco.rnd_code(r["rnd_text"]))
+    # clf_columns.add_column(df, 'rnd_norm_value', lambda r: cco.rnd_norm_value(r['rnd_text']))
+    # clf_columns.add_column(df, 'rnd_money_stage',
+    #                        lambda r: cco.rnd_money_stage(
+    #                            r['rnd_text'], r['raw_level_text'], r['tour_money']))
+    clf_columns.add_column(
+        df, "rnd_stage",
+        lambda r: cco.rnd_stage(r["rnd_text"], r["raw_level_text"], qual_union=True)
+    )
+    clf_columns.add_column(df, "level", lambda r: lev.level_code(r["level_text"]))
+    clf_columns.add_column(
+        df, "surface", lambda r: surf.get_code(r["surface_text"]))
 
     drop_by_condition(variant, df)
     if args.drop_seldom:
         drop_seldom_score(df)
 
+    clf_columns.add_column(
+        df, "raw_level_code",
+        lambda r: lev.raw_level_code(r["rnd_text"], r["raw_level_text"])
+    )
+
+    clf_columns.replace_column_empty_value(
+        df, column_name="h2h_direct", replace_value=0.0)
+
     clf_columns.add_column(df, "year", lambda r: int(r["date"][:4]))
-    df["opener_lose_match"] = 1 - df["fst_win_match"]  # So our target positive now
+    # df["opener_lose_match"] = 1 - df["fst_win_match"]
+    df["fst_dog"] = (df["fst_bet_chance"] < 0.5).astype(int)
+    # our positive target:
+    clf_columns.add_column(
+        df, "dog_win_match", lambda r: int((r["fst_dog"] + r["fst_win_match"]) != 1)
+    )
     assert LABEL_NAME in df.columns, "no label after primary edit"
-
-    if variant.weight_mode == cco.WeightMode.BY_TOTAL_COLUMN:
-        clf_columns.add_column(
-            df, "total_dec", lambda r: min(12, (r["s3_fst_games"] + r["s3_snd_games"]))
-        )
-        clf_columns.add_weight_column(variant.weight_mode, df, LABEL_NAME)
-        # df_main will weighted during fill_data_ending_stratify_n
-
-
-def write_note(variant: cco.Variant, subname: str, text: str):
-    dirname = variant.persist_dirname(MODEL)
-    filename = os.path.join(dirname, subname, "note.txt")
-    with open(filename, "w") as f:
-        f.write(f"{text}\n")
-
-
-def write_df(variant: cco.Variant, df: pd.DataFrame, subname: str):
-    dirname = variant.persist_dirname(MODEL)
-    cco.save_df(df, dirname, subname=subname)
-
-
-def read_df(variant: cco.Variant, subname: str) -> pd.DataFrame:
-    dirname = variant.persist_dirname(MODEL)
-    df = cco.load_df(dirname, subname=subname)
-    if df is None:
-        raise ValueError(f"no dataset {variant.sex} dirname: {dirname}")
-    if df.shape[0] < cco.DATASET_MIN_LEN:
-        raise ValueError(f"few dataset {variant.sex} dirname: {dirname}")
-    return df
 
 
 def make_main_reserve(
     variant: cco.Variant,
-    reserve_size: float,
     is_shuffle: bool = False,
     random_state: int = RESERVE_RANDOM_STATE,
 ):
@@ -270,7 +241,7 @@ def make_main_reserve(
                 или где не вып-ны ограничения по рейтингам,
                 или где не вып-ны ограничения по плотности решающ. партии),
        перемешивает строки (опционально, если задан is_shuffle)
-       добавляет лищь некоторые клонки ('year', 'opener_lose_match'),
+       добавляет лищь некоторые клонки ('year', LABEL_NAME),
        разбивает на main/reserve части в соответствии с reserve_size, CHRONO_SPLIT
        сохраняет наборы в папки main/reserve для входного варанта variant
    """
@@ -279,55 +250,47 @@ def make_main_reserve(
     data0 = pd.read_csv(filename, sep=",")
     primary_edit(variant, data0)
     if data0.shape[0] < cco.DATASET_MIN_LEN:
-        msg = f"after drop nan poor dataset ({data0.shape[0]} rows) sex:{sex}"
-        print(msg)
+        msg = f"after primary_edit poor dataset ({data0.shape[0]} rows) sex:{sex}"
+        cco.out(msg)
         raise ValueError(msg)
-    df = cco.stage_shuffle(data0, is_shuffle, random_state=random_state)
-    target_names = [LABEL_NAME] + variant.key.get_stratify_names(is_text_style=True)
-    if CHRONO_SPLIT:
-        df_main, df_reserve = cco.split2_by_year(df, test_years=cco.CHRONO_TEST_YEARS)
+    df = df_util.stage_shuffle(data0, is_shuffle, random_state=random_state)
+    if DEFAULT_RESERVE_SIZE < 0.01:
+        df_main = df
+        reserve_size = 0.0
+        reserve_shape = (0, 0)
     else:
-        df_main, df_reserve = cco.split2_stratified(
-            df,
-            target_names=target_names,
-            test_size=reserve_size,
-            random_state=random_state,
-        )
-    assert df_main.shape[0] > 0 and df_reserve.shape[0] > 0
+        if CHRONO_SPLIT:
+            df_main, df_reserve = cco.split_all_by_two_chunks(
+                df, remain_size=DEFAULT_RESERVE_SIZE)
+        else:
+            target_names = [LABEL_NAME] + variant.key.get_stratify_names()
+            df_main, df_reserve = cco.split2_stratified(
+                df,
+                target_names=target_names,
+                test_size=DEFAULT_RESERVE_SIZE,
+                random_state=random_state,
+            )
+        assert df_main.shape[0] > 0 and df_reserve.shape[0] > 0
+        reserve_size = round(df_reserve.shape[0] / df.shape[0], 1)
+        reserve_shape = df_reserve.shape
+        variant.write_df(df=df_reserve, subname="reserve")
 
-    if variant.weight_mode == cco.WeightMode.BALANCED:
-        clf_columns.add_weight_column(variant.weight_mode, df, LABEL_NAME)
-        # df_main will weighted during fill_data_ending_stratify_n
-
-    write_df(variant, df=df_main, subname="main")
-    write_df(variant, df=df_reserve, subname="reserve")
+    variant.write_df(df=df_main, subname="main")
 
     msg = (f"shuffle: {is_shuffle} chrono_split: {CHRONO_SPLIT} "
            f"random_seed: {random_seed} random_state: {random_state}\n")
-    msg_m = f"reserving size {1 - reserve_size} in {df.shape}, main {df_main.shape}\n"
-    msg_r = f"reserving size {reserve_size} in {df.shape}, reserve {df_reserve.shape}\n"
-    write_note(variant, subname="main", text=f"{msg}{msg_m}")
-    write_note(variant, subname="reserve", text=f"{msg}{msg_r}")
+    msg_m = f"reserving size {1 - reserve_size} in {df.shape}, main: {df_main.shape}\n"
+    msg_r = f"reserving size {reserve_size} in {df.shape}, reserve: {reserve_shape}\n"
+    variant.write_note(subname="main", text=f"{msg}{msg_m}")
+    variant.write_note(subname="reserve", text=f"{msg}{msg_r}")
     cco.out(msg_m)
 
 
 def make_preanalyze_df(variant: cco.Variant):
     preanalyze_fnames = [
         "fst_bet_chance",
-        "dset_ratio_dif",
-        "decided_win_snd_plr_by_score",
         "dif_elo_alt_pts",
-        "dif_surf_elo_alt_pts",
-        "dif_srv_ratio",
-        "spd_fst_lastrow_games",
-        "fst_s2choke_adv",
-        "dif_service_win",
-        "dif_receive_win",
-        "dif_age",
-        "avg_age",
-        "dif_plr_tour_adapt",
-        "dif_fatigue",
-        "h2h_direct",
+        # and some others
     ]
     sex = variant.sex
     filename = cfg_dir.analysis_data_file(sex, typename="decidedset")
@@ -336,13 +299,13 @@ def make_preanalyze_df(variant: cco.Variant):
     add_columns(variant.sex, data0)
     if data0.shape[0] < cco.DATASET_MIN_LEN:
         msg = f"after drop nan poor dataset ({data0.shape[0]} rows) sex:{sex}"
-        print(msg)
+        cco.out(msg)
         raise ValueError(msg)
     df_out = data0[preanalyze_fnames + [LABEL_NAME]]
-    dirname = variant.persist_dirname(MODEL)
+    dirname = variant.persist_dirname()
     filename = os.path.join(dirname, "preanalyze", "df.csv")
     df_out.to_csv(filename, index=False)
-    write_note(variant, subname="preanalyze", text=f"size {df_out.shape}")
+    variant.write_note(subname="preanalyze", text=f"size {df_out.shape}")
 
 
 def fill_data(
@@ -352,8 +315,8 @@ def fill_data(
     random_state: int = 0,
 ):
     vrnt_key = variant.key
-    df0 = read_df(variant, subname="main")
-    df = cco.stage_shuffle(df0, is_shuffle, random_state=random_state)
+    df0 = variant.read_df(subname="main")
+    df = df_util.stage_shuffle(df0, is_shuffle, random_state=random_state)
     add_columns(variant.sex, df)
 
     clf_columns.with_nan_columns(
@@ -366,9 +329,11 @@ def fill_data(
         vrnt_data, df_spl = cco.fill_data_ending_chrono(
             df,
             split,
+            test_size=DEFAULT_TEST_SIZE,
+            eval_size=DEFAULT_EVAL_SIZE,
             feature_names=variant.feature_names.get_list(),
             label_name=LABEL_NAME,
-            other_names=(vrnt_key.get_stratify_names(is_text_style=False)),
+            other_names=vrnt_key.get_stratify_names(),
             cat_features_idx=cat_feats_idx,
             weight_mode=variant.weight_mode,
         )
@@ -380,15 +345,13 @@ def fill_data(
             eval_size=DEFAULT_EVAL_SIZE,
             feature_names=variant.feature_names.get_list(),
             label_name=LABEL_NAME,
-            other_names=(vrnt_key.get_stratify_names(is_text_style=False)),
+            other_names=vrnt_key.get_stratify_names(),
             cat_features_idx=cat_feats_idx,
             weight_mode=variant.weight_mode,
             random_state=random_state,
         )
     return vrnt_data, df_spl
 
-
-train_variants = [var_atp_main_clr_1f]
 
 # # ---------------------- experiments ---------------------------
 from hyperopt import hp
@@ -408,25 +371,30 @@ def put_seed(seed: int):
 
 
 def scores_reserve(variant: cco.Variant, head: str = ""):
-    sex = variant.sex
-    if variant.feature_names.exist_cat():
-        raise NotImplementedError(f"need pool from reserve, sex: {sex}")
-    df = read_df(variant, subname="reserve")
+    """ input: variant with fited clf, reserved csv file.
+        out: predict precision, accuracy, auc """
+    assert variant.clf is not None, "variant without clf"
+    assert variant.clf.is_fitted(), "not fitted clf"
+    df = variant.read_df(subname="reserve")
     add_columns(variant.sex, df)
     X, y = cco.get_xy(df, variant.feature_names.get_list(), LABEL_NAME)
+    if variant.is_cb_native() and variant.exist_cat():
+        X = cco.x_tolist(X, variant.feature_names.cat_indexes())
+        y = y.tolist()
     y_pred = variant.clf.predict(X)
-    # prec = precision_score(y, y_pred)
+    prec = precision_score(y, y_pred)
     acc = accuracy_score(y, y_pred)
     auc = roc_auc_score(y, variant.clf.predict_proba(X)[:, 1])
-    cco.out(f"{head} acc: {acc} auc: {auc}")
-    cco.out(f"treecnt: {variant.clf.tree_count_}")
-    cco.out(f"lrate: {variant.clf.learning_rate_}")
+    cco.out(f"{head} prc: {prec} acc: {acc} auc: {auc}")
 
     res = cco.get_result(variant, variant.clf, X_test=X, y_test=y)
     wl = res.negwl + res.poswl
-    cco.out(
-        f"wl {wl.ratio_size_str(precision=3)} " f"rat {round(wl.size / y.shape[0], 3)}"
-    )
+    cco.out(f"wl {wl.ratio_size_str(precision=3)} " 
+            f"rat {round(wl.size / len(y), 3)}")
+    cco.out(f"pwl {res.poswl.ratio_size_str(precision=3)} " 
+            f"rat {round(res.poswl.size / len(y), 3)}")
+    cco.out(f"nwl {res.negwl.ratio_size_str(precision=3)} " 
+            f"rat {round(res.negwl.size / len(y), 3)}")
 
 
 def final_train_save(variant: cco.Variant, seed: int, random_state: int):
@@ -434,25 +402,28 @@ def final_train_save(variant: cco.Variant, seed: int, random_state: int):
     variant.set_random_state(seed)
     data, _ = fill_data(
         variant,
-        # split=False,  # it supplies eval=None
-        split=None,
+        split=False,  # it supplies eval=None
+        # split=None,
         is_shuffle=args.shuffle,
         random_state=random_state,
     )
-    variant.make_clf_fit(data, metric_name, random_seed=seed)
-    variant.save_clf(model_name=MODEL, metric_name=metric_name)
+    variant.make_clf_fit(data, random_seed=seed)
+    variant.save_clf()
     msg = (
         f"final_train_save done var: {variant} "
         f"seed: {seed} random_state={random_state}"
     )
-    write_note(variant, subname="clf", text=msg)
+    variant.write_note(subname="clf", text=msg)
     cco.out(msg)
 
 
-def random_train(variant: cco.Variant, msg="", split=True, plot=False):
+def random_train(variant: cco.Variant, msg="", split=True, plot=False, verbose=False):
     all_name_imp = defaultdict(lambda: 0.0)
-    prc_list, acc_list, auc_list, treecnt_list, lrate_list = [], [], [], [], []
-    all_wl = st.WinLoss()
+    aprc_list, prc_list, acc_list, auc_list, treecnt_list, lrate_list = (
+        [], [], [], [], [], []
+    )
+    pos_wl = st.WinLoss()
+    neg_wl = st.WinLoss()
     all_test_size = 0
 
     for seed in random_args.iter_seeds():
@@ -467,13 +438,18 @@ def random_train(variant: cco.Variant, msg="", split=True, plot=False):
                 is_shuffle=args.shuffle,
                 random_state=random_state,
             )
-            clf = variant.make_clf_fit(data, metric_name, random_seed=seed, plot=plot)
-            name_imp = variant.get_features_importance(variant.feature_names.get_list())
+            if verbose:
+                cco.out(data.size_report())
+            clf = variant.make_clf_fit(data, random_seed=seed, plot=plot)
+            name_imp = variant.get_features_importance()
             for name, imp in name_imp.items():
                 all_name_imp[name] += imp
+            aprec = average_precision_score(data.test.y,
+                                            clf.predict_proba(data.test.X)[:, 1])
             prec = precision_score(data.test.y, clf.predict(data.test.X))
             acc = accuracy_score(data.test.y, clf.predict(data.test.X))
             auc = roc_auc_score(data.test.y, clf.predict_proba(data.test.X)[:, 1])
+            aprc_list.append(aprec)
             prc_list.append(prec)
             acc_list.append(acc)
             auc_list.append(auc)
@@ -482,19 +458,26 @@ def random_train(variant: cco.Variant, msg="", split=True, plot=False):
                 lrate_list.append(clf.learning_rate_)
             log.info(f"gomean acc {sum(acc_list) / len(acc_list)}")
             res = variant.make_test_result(data)
-            all_wl += res.poswl + res.negwl
-            all_test_size += data.test.X.shape[0]
+            pos_wl += res.poswl
+            neg_wl += res.negwl
+            all_test_size += len(data.test.X)  # was shape[0]
 
     log.info(f"******************************************\n"
-             f"*****{msg}*** {variant.name} results******\n")
+             f"*****{msg}*** {variant.name} results******")
+    log.info(f"mean_aprc {sum(aprc_list) / random_args.space_size()}")
     log.info(f"mean_prc {sum(prc_list) / random_args.space_size()}")
     log.info(f"mean_acc {sum(acc_list) / random_args.space_size()}")
     log.info(f"mean_auc {sum(auc_list) / random_args.space_size()}")
     if variant.is_cb_native():
         log.info(f"treecnt {sum(treecnt_list) / random_args.space_size()}")
         log.info(f"lrate {sum(lrate_list) / random_args.space_size()}")
+    all_wl = pos_wl + neg_wl
     log.info(f"all_wl {all_wl.ratio_size_str(precision=4)} "
              f"ratio {round(all_wl.size / all_test_size, 3)}")
+    log.info(f"pos_wl {pos_wl.ratio_size_str(precision=4)} "
+             f"ratio {round(pos_wl.size / all_test_size, 3)}")
+    log.info(f"neg_wl {neg_wl.ratio_size_str(precision=4)} "
+             f"ratio {round(neg_wl.size / all_test_size, 3)}")
     log.info("all_name_imp:")
     all_name_imp_list = [
         (k, v / random_args.space_size()) for k, v in all_name_imp.items()
@@ -504,7 +487,11 @@ def random_train(variant: cco.Variant, msg="", split=True, plot=False):
 
 
 def hyperopt_search(
-    variant: cco.Variant, data, max_evals, mix_algo_ratio=None, random_state=None
+    variant: cco.Variant,
+    data: Union[cco.Data, clf_cat_tools.DataCatBoost],
+    max_evals,
+    mix_algo_ratio=None,
+    random_state=None
 ):
     timer = stopwatch.Timer()
     if variant.is_gb():
@@ -524,6 +511,11 @@ def hyperopt_search(
             random_state=random_state,
         )
     elif variant.is_cb_native():
+        if data.exist_cat():
+            assert variant.exist_cat(), (
+                f"data with cat, variant without cat:"
+                f"\n{variant.feature_names}")
+            data.tolist()
         pools = clf_cat_tools.make_pools(data)
         clf_hp_cb.do_fmin(
             pools,
@@ -545,12 +537,12 @@ if __name__ == "__main__":
         parser.add_argument("--variant", type=str)
         parser.add_argument("--shuffle", action="store_true")
         parser.add_argument("--drop_seldom", action="store_true")
-        parser.add_argument("--hyperopt_search", action="store_true")
+        parser.add_argument("--search", action="store_true")
         parser.add_argument("--scores_reserve", action="store_true")
         parser.add_argument("--final_train_save", action="store_true")
         parser.add_argument("--reserve", action="store_true")
         parser.add_argument("--random_train", action="store_true")
-        parser.add_argument("--log_instance", type=int)
+        parser.add_argument("--log_instance", type=int, default=3)
         parser.add_argument("--preanalyze", action="store_true")
         co.RandomArguments.prepare_parser(parser)
         return parser.parse_args()
@@ -568,16 +560,11 @@ if __name__ == "__main__":
             variant,
             data,
             max_evals=100,
-            mix_algo_ratio=clf_hp.MixAlgoRatio(tpe=0.50, anneal=0.50, rand=0.00),
+            mix_algo_ratio=clf_hp.MixAlgoRatio(tpe=0.00, anneal=1.00, rand=0.00),
             random_state=random_state,
         )
 
     args = parse_command_line_args()
-    log.initialize(
-        co.logname(__file__, instance=args.log_instance),
-        file_level="info",
-        console_level="info",
-    )
     co.log_command_line_args()
     random_args = co.RandomArguments(args, default_seed=random_seed)
     if args.variant:
@@ -594,19 +581,19 @@ if __name__ == "__main__":
     else:
         in_variant = None
     log.info(f"==== var {in_variant}")
-    if args.hyperopt_search:
+    if args.search:
         go_hyperopt_search(in_variant)
     elif args.preanalyze:
         make_preanalyze_df(variant=in_variant)
     elif args.random_train:
         random_train(variant=in_variant)
     elif args.reserve:
-        make_main_reserve(
-            in_variant, reserve_size=DEFAULT_RESERVE_SIZE, is_shuffle=args.shuffle
-        )
+        put_seed(random_args.get_any_seed())
+        make_main_reserve(in_variant, is_shuffle=args.shuffle,
+                          random_state=random_args.get_any_state())
     elif args.scores_reserve:
         cco.set_seed(random_seed)
-        load_variants(variants=[in_variant], metric_name=metric_name)
+        cco.load_variants(variants=[in_variant])
         scores_reserve(variant=in_variant)
     elif args.final_train_save:
         final_train_save(
@@ -614,3 +601,4 @@ if __name__ == "__main__":
             seed=random_args.get_any_seed(),
             random_state=random_args.get_any_state(),
         )
+    # sys.exit(0)

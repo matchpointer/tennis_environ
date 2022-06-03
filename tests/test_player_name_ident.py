@@ -2,7 +2,7 @@ import unittest
 
 import dba
 import common as co
-import log
+from loguru import logger as log
 import oncourt_players
 from tennis import Player
 from player_name_ident import AbbrName, identify_player
@@ -52,38 +52,38 @@ class AbbrNameTest(unittest.TestCase):
         More radical treatment is to read full plr-name in flashscore_match page.
         """
         # ambigious: wrong answer gives:  'Jiaxi Lu'
-        plr = identify_player('FS', 'wta', 'Lu J.', cou='CHN')
+        plr = identify_player('wta', 'Lu J.', cou='CHN')
         self.assertTrue(plr is not None)
         if plr is not None:
             self.assertTrue(plr.ident is not None)
             self.assertEqual(plr.name, 'Jia-Jing Lu')  # pid=6744
 
     def test_wta_identify_player(self):
-        plr = identify_player("FS", "wta", "Rybakina E.", cou="KAZ")
+        plr = identify_player("wta", "Rybakina E.", cou="KAZ")
         self.assertTrue(plr is not None)
         if plr is not None:
             self.assertTrue(plr.ident is not None)
             self.assertEqual(plr.name, "Elena Rybakina")
 
-        plr = identify_player("FS", "wta", "Chirico L.", cou="USA")
+        plr = identify_player("wta", "Chirico L.", cou="USA")
         self.assertTrue(plr is not None)
         if plr is not None:
             self.assertTrue(plr.ident is not None)
             self.assertEqual(plr.name, "Louisa Chirico")
 
-        plr = identify_player("FS", "wta", "Fernandez L. A.", cou="CAN")
+        plr = identify_player("wta", "Fernandez L. A.", cou="CAN")
         self.assertTrue(plr is not None)
         if plr is not None:
             self.assertTrue(plr.ident is not None)
             self.assertEqual(plr.name, "Leylah Annie Fernandez")
 
-        plr = identify_player("FS", "wta", "Marino R.", cou="CAN")
+        plr = identify_player("wta", "Marino R.", cou="CAN")
         self.assertTrue(plr is not None)
         if plr is not None:
             self.assertTrue(plr.ident is not None)
             self.assertEqual(plr.name, "Rebecca Marino")
 
-        plr: Player = identify_player("FS", "wta", "Wang Xin.", cou="CHN")
+        plr: Player = identify_player("wta", "Wang Xin.", cou="CHN")
         self.assertTrue(plr is not None)
         if plr is not None:
             self.assertTrue(plr.ident is not None)
@@ -190,9 +190,6 @@ def setUpModule():
 
 
 if __name__ == "__main__":
-    log.initialize(
-        co.logname(__file__, test=True), file_level="info", console_level="info"
-    )
     if not dba.initialized():
         dba.open_connect()
     unittest.main()

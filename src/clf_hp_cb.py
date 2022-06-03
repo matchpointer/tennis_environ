@@ -1,7 +1,12 @@
-
+"""
+Note:
+can't use metric_name='Precision' (also 'Accuracy'):
+_catboost.CatBoostError: C:/Program Files (x86)/Go Agent/pipelines/BuildMaster/catboost.git/catboost/private/libs/options/loss_descript
+ion.cpp:465: loss [RMSE] is incompatible with metric [Precision] (no classification support)
+"""
 import msvcrt
 import numpy as np
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_score, accuracy_score
 from hyperopt import hp, fmin, tpe, STATUS_OK, Trials
 
 from catboost import CatBoost, CatBoostClassifier, cv
@@ -23,23 +28,29 @@ def is_quit_pressed():
 
 def get_space():
     params_space = {
-        # 'learning_rate': hp.choice('learning_rate', [0.03]),
-        "l2_leaf_reg": hp.uniform("l2_leaf_reg", 1.9, 5.2),
+        'learning_rate': hp.choice('learning_rate', [0.025, 0.03, 0.035]),
+        'leaf_estimation_method': hp.choice('leaf_estimation_method', ['Gradient', 'Newton']),
+        # "l2_leaf_reg": hp.uniform("l2_leaf_reg", 1.9, 5.2),
         # 'random_strength': hp.uniform('random_strength', 1., 2.),
         # 'bagging_temperature': hp.uniform('bagging_temperature', 0., 1.4),
-        "depth": hp.choice("depth", [3]),
-        # 'per_float_feature_quantization': hp.choice(
-        #     'per_float_feature_quantization',
-        #     [['0:border_count=255'], ['0:border_count=512'], ['0:border_count=720']]),
-        "iterations": hp.choice("iterations", [130]),
+        'boosting_type': 'Ordered',
+        'early_stopping_rounds': hp.choice('early_stopping_rounds', [100, 150, 200, 250, 300]),
+        "depth": hp.choice("depth", [3, 4, 5]),
+        # 'per_float_feature_quantization': ['0:border_count=512'],
+        'per_float_feature_quantization': hp.choice(
+            'per_float_feature_quantization',
+            [['0:border_count=512'], ['0:border_count=256'], ['0:border_count=128']]
+        ),
+        # "iterations": hp.choice("iterations", [140, 200, 250, 300]),
     }
     return params_space
 
 
-def do_fmin(pools, max_evals, mix_algo_ratio=None, random_state=None, how="cv"):
+def do_fmin(pools, max_evals, mix_algo_ratio=None, random_state=None,
+            how="native", metric_name="AUC"):
     assert isinstance(pools, clf_cat_tools.Pools)
     space = get_space()
-    objective = get_objective(pools, random_state, how=how)
+    objective = get_objective(pools, random_state, how=how, metric_name=metric_name)
     return do_fmin_impl(
         objective,
         space,
@@ -49,7 +60,19 @@ def do_fmin(pools, max_evals, mix_algo_ratio=None, random_state=None, how="cv"):
     )
 
 
-def get_objective(pools, random_state, how="sklearn", metric_name="AUC"):
+def _score_val(metric_name, y_true, y_pred):
+    if metric_name == "AUC":
+        scr_val = roc_auc_score(y_true, y_pred)
+    elif metric_name == "Precision":
+        scr_val = precision_score(y_true, y_pred)
+    elif metric_name == "Accuracy":
+        scr_val = accuracy_score(y_true, y_pred)
+    else:
+        raise ValueError(f"wrong metric_name: {metric_name}")
+    return scr_val
+
+
+def get_objective(pools, random_state, how: str, metric_name: str):
     def objective(space):
         global best_score, trials_count
         #       if os.path.isdir('./catboost_info'):
@@ -72,21 +95,18 @@ def get_objective(pools, random_state, how="sklearn", metric_name="AUC"):
             mdl = CatBoostClassifier(**params)
             mdl.fit(pools.train)
             pred = mdl.predict_proba(pools.eval)[:, 1]
-            scr_val = roc_auc_score(pools.eval.y, pred)
+            scr_val = _score_val(metric_name, pools.eval.y, pred)
         elif how == "native":
             mdl = CatBoost(params)
             mdl.fit(
                 pools.train,
-                eval_set=None,  # pools.eval if pools.eval else None,
+                eval_set=pools.eval if pools.eval else None,
                 silent=True,
-            )  # eval_set=pools.eval
-            pred = mdl.predict(pools.eval, prediction_type="Probability")[:, 1]
-            scr_val = roc_auc_score(pools.eval.get_label(), pred)
+            )
+            pred = mdl.predict(pools.test, prediction_type="Probability")[:, 1]
+            scr_val = _score_val(metric_name, pools.test.get_label(), pred)
         else:
             raise Exception("bad how arg {}".format(how))
-
-        #       pred = mdl.predict(data.X_test)
-        #       scr_val = precision_score(data.y_test, pred)
 
         if scr_val > best_score:
             if how == "cv":

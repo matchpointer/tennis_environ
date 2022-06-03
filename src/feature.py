@@ -75,21 +75,21 @@ def make_pair(
 def make_pair2(
     corename: str, fst_value=None, snd_value=None
 ) -> Tuple[Feature, Feature]:
-    fst_feat = Feature(name="fst_" + corename, value=fst_value, flip_value=snd_value)
-    snd_feat = Feature(name="snd_" + corename, value=snd_value, flip_value=fst_value)
+    fst_feat = Feature(name=f"fst_{corename}", value=fst_value, flip_value=snd_value)
+    snd_feat = Feature(name=f"snd_{corename}", value=snd_value, flip_value=fst_value)
     return fst_feat, snd_feat
 
 
 def make_empty_pair(corename: str) -> Tuple[Feature, Feature]:
-    fst_feat = RigidFeature(name="fst_" + corename, value=None)
-    snd_feat = RigidFeature(name="snd_" + corename, value=None)
+    fst_feat = RigidFeature(name=f"fst_{corename}", value=None)
+    snd_feat = RigidFeature(name=f"snd_{corename}", value=None)
     return fst_feat, snd_feat
 
 
 def add_pair(features: List[Feature], corename: str, fst_value=None, snd_value=None):
     f1, f2 = make_pair(
-        fst_name="fst_" + corename,
-        snd_name="snd_" + corename,
+        fst_name=f"fst_{corename}",
+        snd_name=f"snd_{corename}",
         fst_value=fst_value,
         snd_value=snd_value,
     )
@@ -106,12 +106,12 @@ def all_empty(features: List[Feature]) -> bool:
 
 
 def player_features(features: List[Feature], name: str) -> Tuple[Feature, Feature]:
-    f1 = co.find_first(features, lambda f: f.name == "fst_" + name)
+    f1 = co.find_first(features, lambda f: f.name == f"fst_{name}")
     if not f1:
-        raise cco.FeatureError("not found/empty {}".format("fst_" + name))
-    f2 = co.find_first(features, lambda f: f.name == "snd_" + name)
+        raise cco.FeatureError("not found/empty {}".format(f"fst_{name}"))
+    f2 = co.find_first(features, lambda f: f.name == f"snd_{name}")
     if not f2:
-        raise cco.FeatureError("not found/empty {}".format("snd_" + name))
+        raise cco.FeatureError("not found/empty {}".format(f"snd_{name}"))
     return f1, f2
 
 
@@ -124,15 +124,15 @@ def dif_player_features(features: List[Feature], name: str):
 
 def player_feature(features: List[Feature], name: str, is_first: bool) -> Feature:
     prefix = "fst_" if is_first else "snd_"
-    feat = co.find_first(features, lambda f: f.name == (prefix + name))
+    feat = co.find_first(features, lambda f: f.name == f"{prefix}{name}")
     if feat is None or feat.value is None:
-        raise cco.FeatureError("not found/empty {}".format(prefix + name))
+        raise cco.FeatureError(f"not found/empty {prefix}{name}")
     return feat
 
 
 def is_player_feature(features: List[Feature], name: str, is_first: bool) -> bool:
     prefix = "fst_" if is_first else "snd_"
-    feat = co.find_first(features, lambda f: f.name == (prefix + name))
+    feat = co.find_first(features, lambda f: f.name == f"{prefix}{name}")
     return feat is not None and not feat.empty()
 
 

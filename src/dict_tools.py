@@ -60,7 +60,7 @@ def load(filename, createfun=None, keyfun=None, valuefun=None, filterfun=None):
     from common import Struct, StructKey
     from report_line import SizedValue, ReportLine
     from stat_cont import Sumator, WinLoss
-    from tennis import Round, Surface, Level
+    from tennis import Round
     from score import Score
 
     keyloadfun = keyfun if keyfun is not None else eval

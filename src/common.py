@@ -12,8 +12,9 @@ from typing import List
 
 from enum import IntEnum
 
-import cfg_dir
-import log
+from loguru import logger as log
+
+import lev
 from side import Side
 
 
@@ -28,21 +29,6 @@ class PlatformNodes:
     @staticmethod
     def is_second_node():
         return node() == PlatformNodes.SECOND_NODE
-
-
-def logname(sourcename, test=False, instance=None):
-    sourcename = sourcename.replace(".py", ".log")
-    if instance:
-        sourcename = sourcename.replace(".log", f"_{instance}.log")
-    if test:
-        pre_path, basename = os.path.split(sourcename)
-        sourcename = os.path.join(pre_path, "utest_" + basename)
-    if os.path.isabs(sourcename):
-        if "src" in sourcename:
-            sourcename = sourcename.replace("src", "log")
-        return sourcename
-    else:
-        return os.path.join(cfg_dir.log_dir(), sourcename)
 
 
 def abscurfilename(basefilename):
@@ -325,7 +311,7 @@ class Keys(dict):
     def soft_main_from_raw(level, rnd, surface=None):
         import tennis
 
-        soft_level = tennis.soft_level(level, rnd)
+        soft_level = lev.soft_level(level, rnd)
         if surface is not None:
             return Keys(level=soft_level, surface=str(surface))
         else:
@@ -470,10 +456,6 @@ class TennisScoreOrderError(TennisScoreError):
     pass
 
 
-class TennisSurfaceError(TennisError):
-    pass
-
-
 class TennisParseError(TennisError):
     pass
 
@@ -492,24 +474,6 @@ class TennisDebugError(TennisError):
 
 class TennisInternetError(TennisError):
     pass
-
-
-class TennisCommandError(TennisError):
-    def __init__(self, cmd, comments=""):
-        TennisError.__init__(self, comments)
-        self.cmd = cmd
-
-    def __str__(self):
-        result = ""
-        comments = TennisError.__str__(self)
-        if comments:
-            result += comments + " "
-        return result + str(self.cmd)
-
-
-class TennisDatabaseCommandError(TennisCommandError):
-    def __init__(self, cmd, comments=""):
-        TennisCommandError.__init__(self, cmd, comments)
 
 
 def split_ontwo(text: str, delim: str, right_find=True):
@@ -681,19 +645,6 @@ def cyrillic_misprint_to_latin(text):
 
 def joined_name(iterable, sep="_"):
     return "_".join((str(i) for i in iterable))
-
-
-def make_title(text):
-    if text is None:
-        return text
-
-    if text in ("USA", "UAE"):
-        return text
-
-    result = "-".join([w.title() for w in text.split("-")])
-    if " De " in result:
-        result = result.replace(" De ", " de ")
-    return result
 
 
 def date_to_str(date: datetime.date, sep: str = "-") -> str:
@@ -943,6 +894,12 @@ def to_align_list(rows, completer=" ", sep=" "):
                 line += sep
         result.append(line)
     return result
+
+
+class Using(IntEnum):
+    NO = 0
+    IFEXIST = 1
+    ALWAYS = 2
 
 
 def is_odd(num):

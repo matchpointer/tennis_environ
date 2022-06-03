@@ -4,7 +4,7 @@ including points score in game (for example 40:30)
 """
 import datetime
 import time
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import Optional, Tuple, List
 import re
 
@@ -12,9 +12,10 @@ from lxml import etree
 import lxml.html
 
 import common as co
-import log
+from loguru import logger as log
+import lev
 import oncourt_players
-from tennis import Surface, Level
+from surf import make_surf, Carpet, Hard
 import tennis_time as tt
 import player_name_ident
 import weeked_tours
@@ -25,31 +26,37 @@ from live import (
     MatchSubStatus,
     LiveMatch,
     LiveTourEvent,
-    skip_levels_default,
     skip_levels_work,
 )
 from live_tourinfo import TourInfo, TourInfoCache
 from oncourt_db import MAX_WTA_FUTURE_MONEY
 from geo import city_in_europe
-from tour_name import TourName
+from tour_name import TourName, tourname_number_split
+from country_code import alpha_3_code
 
 SKIP_SEX = None
 SKIP_FINAL_RESULT_ONLY = True  # events marked as FRO are without point by point
 
 
 def make_events(
-    webpage, skip_levels, match_status=MatchStatus.live, target_date=None
+    webpage, skip_levels, match_status=MatchStatus.live, target_date=None,
+    plr_country_long: bool = False
 ) -> List[LiveTourEvent]:
     """Return events list. skip_levels is dict: sex -> levels"""
     parser = lxml.html.HTMLParser(encoding="utf8")
     tree = lxml.html.document_fromstring(webpage, parser)
     if target_date is None:
         target_date = datetime.date.today()  # also possible _make_current_date(tree)
-    result = _make_events_impl(target_date, tree, match_status, skip_levels)
+    result = _make_events_impl(target_date, tree, match_status, skip_levels, plr_country_long)
     return result
 
 
-def _make_events_impl(cur_date, tree, match_status, skip_levels) -> List[LiveTourEvent]:
+_err_counter = Counter()
+MAX_LOG_RECORDS_PER_ERROR = 100
+
+
+def _make_events_impl(cur_date, tree, match_status, skip_levels, plr_country_long: bool
+                      ) -> List[LiveTourEvent]:
     tour_events = []
     # div(tour_info), div(match), div(match)..., div(tour_info), div(match)...
     all_divs = list(
@@ -60,14 +67,22 @@ def _make_events_impl(cur_date, tree, match_status, skip_levels) -> List[LiveTou
     while is_events:
         try:
             tennis_event = _make_live_tour_event(
-                all_divs[start_idx:], match_status, skip_levels, cur_date, start_idx
+                all_divs[start_idx:],
+                match_status,
+                skip_levels,
+                cur_date,
+                start_idx,
+                plr_country_long,
             )
             if tennis_event:
                 tour_events.append(tennis_event)
         except LiveEventToskipError:
             pass
         except co.TennisError as err:
-            log.error("{} [{}]".format(err, err.__class__.__name__))
+            msg = "{} [{}]".format(err, err.__class__.__name__)
+            _err_counter[msg] += 1
+            if _err_counter[msg] < MAX_LOG_RECORDS_PER_ERROR:
+                log.error(msg)
         if (start_idx + 1) >= (len(all_divs) - 1):
             break
         idx, head_el = co.find_indexed_first(
@@ -78,14 +93,16 @@ def _make_events_impl(cur_date, tree, match_status, skip_levels) -> List[LiveTou
     return [t for t in tour_events if t.matches]
 
 
-def _make_live_tour_event(elements, match_status, skip_levels, current_date, start_idx):
+def _make_live_tour_event(elements, match_status, skip_levels, current_date, start_idx,
+                          plr_country_long):
     tour_info = _make_tourinfo(elements[0], start_idx, skip_levels)
     live_event = LiveTourEvent()
     live_event.tour_info = tour_info
     for elem in elements[1:]:
         if "event__match" not in elem.get("class"):
             break  # next tour event
-        live_match = _make_live_match(elem, live_event, current_date, match_status)
+        live_match = _make_live_match(
+            elem, live_event, current_date, match_status, plr_country_long)
         if live_match is None:
             continue
         if live_match.paired():
@@ -94,7 +111,8 @@ def _make_live_tour_event(elements, match_status, skip_levels, current_date, sta
     return live_event
 
 
-def _make_live_match(element, live_event, current_date, match_status: MatchStatus):
+def _make_live_match(element, live_event, current_date, match_status: MatchStatus,
+                     plr_country_long: bool):
     def is_final_result_only():
         # score (not point by point) will be after match finish.
         # after finish we can not determinate that is was state FRO.
@@ -136,7 +154,43 @@ def _make_live_match(element, live_event, current_date, match_status: MatchStatu
                 sub_status = MatchSubStatus.cancelled
         return status, sub_status
 
+    def get_name(is_left):
+        inclass_txt = "event__participant--{}".format("home" if is_left else "away")
+        xpath_txt = "child::div[contains(@class, '{}')]".format(inclass_txt)
+        try:
+            plr_el = co.find_first_xpath(element, xpath_txt)
+            if plr_el is None:
+                raise co.TennisParseError(
+                    "nofound plr_el in \n{}".format(
+                        etree.tostring(element, encoding="utf8")
+                    )
+                )
+            name = co.to_ascii(plr_el.text).strip()
+            return name
+        except ValueError:
+            # maybe it is team's result div without '(cou)':
+            tourinfo_cache.edit_skip(live_event.tour_info)
+
+    def get_cou(is_left):
+        """ style with plr_country_long=True, national flag image """
+        inclass_txt = "event__logo--{}".format("home" if is_left else "away")
+        xpath_txt = "child::span[contains(@class, '{}')]".format(inclass_txt)
+        try:
+            cou_el = co.find_first_xpath(element, xpath_txt)
+            if cou_el is None:
+                raise co.TennisParseError(
+                    "nofound cou_el in \n{}".format(
+                        etree.tostring(element, encoding="utf8")
+                    )
+                )
+            cou = co.to_ascii(cou_el.get('title')).strip()
+            return cou
+        except ValueError:
+            # maybe it is team's result div without '(cou)':
+            tourinfo_cache.edit_skip(live_event.tour_info)
+
     def get_name_cou(is_left):
+        """ traditional style (plr_country_long=False) """
         inclass_txt = "event__participant--{}".format("home" if is_left else "away")
         xpath_txt = "child::div[contains(@class, '{}')]".format(inclass_txt)
         try:
@@ -213,9 +267,15 @@ def _make_live_match(element, live_event, current_date, match_status: MatchStatu
     if cur_st == MatchStatus.scheduled:
         obj.time = get_time()
     obj.date = current_date
-    left_name, left_cou = get_name_cou(is_left=True)
-    right_name, right_cou = get_name_cou(is_left=False)
-    obj.name = left_name + " - " + right_name
+    if plr_country_long:
+        left_name = get_name(is_left=True)
+        left_cou = alpha_3_code(get_cou(is_left=True))
+        right_name = get_name(is_left=False)
+        right_cou = alpha_3_code(get_cou(is_left=False))
+    else:
+        left_name, left_cou = get_name_cou(is_left=True)
+        right_name, right_cou = get_name_cou(is_left=False)
+    obj.name = f"{left_name} - {right_name}"
     obj.first_player = _find_player(live_event.sex, left_name, left_cou)
     obj.second_player = _find_player(live_event.sex, right_name, right_cou)
     if cur_st == MatchStatus.live:
@@ -251,15 +311,15 @@ def initialize_players_cache(webpage, match_status=MatchStatus.scheduled):
 
 def _find_player(sex: str, disp_name: str, cou: str):
     cache = wta_today_players_cache if sex == "wta" else atp_today_players_cache
-    if cache:
+    if cache and not init_players_cache_mode:
         return cache[(disp_name, cou)]
     if deep_find_player_mode:
-        plr = player_name_ident.identify_player("FS", sex, disp_name, cou)
+        plr = player_name_ident.identify_player(sex, disp_name, cou)
         if init_players_cache_mode:
             if plr is not None:
                 cache[(disp_name, cou)] = plr
             else:
-                log.warn("fail player ident {} '{}' {}".format(sex, disp_name, cou))
+                log.warning("fail player ident {} '{}' {}".format(sex, disp_name, cou))
         return plr
     else:
         return co.find_first(
@@ -282,6 +342,7 @@ def _make_tourinfo(element, start_idx, skip_levels):
             tourinfo_fs.level in skip_levels[tourinfo_fs.sex]
             or tourinfo_fs.sex == SKIP_SEX
             or tourinfo_fs.teams
+            or (tourinfo_fs.qualification and tourinfo_fs.level in ('chal', 'future'))
         )
 
     def split_before_after_text(text, part):
@@ -388,12 +449,20 @@ class TourInfoFlashscore(TourInfo):
     def __init__(self, part_one, part_two):
         super().__init__()
 
-        body_part, surf_part = co.split_ontwo(part_two, delim=", ")
-        body_part, qual_part = co.split_ontwo(body_part, delim=" - ")
+        body_part, surf_part = co.split_ontwo(part_two, delim=', ')
+        body_part, qual_part = co.split_ontwo(body_part, delim=' - ')
         body_part, country_part = split_ontwo_enclosed(
-            body_part, delim_op="(", delim_cl=")")
-        body_part, desc_part = split_ontwo_enclosed(
-            body_part, delim_op="(", delim_cl=")")
+            body_part, delim_op='(', delim_cl=')')
+
+        if '(' in body_part:
+            body_part, desc_part = split_ontwo_enclosed(
+                body_part, delim_op='(', delim_cl=')')
+        elif ' - ' in body_part:
+            body_part, desc_part = co.split_ontwo(body_part, delim=' - ')
+        else:
+            desc_part = ''
+        body_part = body_part.split(',')[0]
+
         number = None
         if body_part and body_part[-1].isdigit() and body_part[-2] == " ":
             number = int(body_part[-1])
@@ -425,8 +494,9 @@ class TourInfoFlashscore(TourInfo):
         self.qualification = "Qualification" in qual_part and not self.teams
         self.exhibition = "EXHIBITION" in part_one
         self.itf = part_one.startswith("ITF")
-        self.surface = Surface(surf_part) if surf_part else None
+        self.surface = make_surf(surf_part) if surf_part else None
         self.tour_name, money = self.init_tourname(body_part, desc_part, number)
+        # if end season Finals (rnd 1/2 or Final) -> qual_part='Play Offs' country='World'
         self.level = self.__init_level(is_grand_slam, part_one, qual_part, money)
         self.country = country_part
         self.corrections()
@@ -436,7 +506,7 @@ class TourInfoFlashscore(TourInfo):
         if surface is not None:
             self.surface = surface
         elif (
-            self.surface == "Hard"
+            self.surface == Hard
             and (
                 datetime.date.today().month in (12, 1, 2)
                 or (
@@ -446,7 +516,7 @@ class TourInfoFlashscore(TourInfo):
             )
             and city_in_europe(self.tour_name.name)  # not play hard in winter europe
         ):
-            self.surface = Surface("Carpet")
+            self.surface = Carpet
 
     def init_tourname(self, body_part, desc_part, number):
         def map_to_oncourt():
@@ -471,6 +541,8 @@ class TourInfoFlashscore(TourInfo):
                 body_part = money_tourname[1]
 
         body_part, num = map_to_oncourt()
+        if num is None:
+            desc_part, num = tourname_number_split(desc_part)
         return (
             TourName(name=body_part, desc_name=desc_part, number=num),
             money,
@@ -478,34 +550,37 @@ class TourInfoFlashscore(TourInfo):
 
     def __init_level(self, is_grand_slam, part_one, qual_part, money):
         if is_grand_slam:
-            result = Level("gs")
+            result = lev.gs
         elif "CHALLENGER" in part_one:
-            result = Level("chal")
+            result = lev.chal
         elif "BOYS" in part_one or "GIRLS" in part_one:
-            result = Level("junior")
+            result = lev.junior
         elif self.teams:
             if "World Group" in qual_part or "ATP Cup" in self.tour_name.name:
-                result = Level("teamworld")
+                result = lev.teamworld
             else:
-                result = Level("team")
+                result = lev.team
         elif self.itf:
             if self.sex == "wta" and (
                 (money is not None and money > MAX_WTA_FUTURE_MONEY)
                 or (self.tour_name, self.surface) in wta_chal_tour_surf
             ):
-                result = Level("chal")
+                result = lev.chal
             else:
-                result = Level("future")
+                result = lev.future
         else:
-            result = Level("main")
+            result = lev.main
         return result
 
 
-tourinfo_cache = TourInfoCache(skip_exc_cls=LiveEventToskipError)
+tourinfo_cache = TourInfoCache(
+    skip_exc_cls=LiveEventToskipError,
+    skip_keys=('ITF WOMEN - SINGLESW80 Macon, GA (USA)',)
+)
 
 
 def _make_current_date(root_elem):
-    i_el = co.find_first_xpath(root_elem, "//div[@class='icon icon--calendar']")
+    i_el = co.find_first_xpath(root_elem, "//svg[@class='calendar__icon']")
     if i_el is not None:
         date_txt = i_el.tail
         if date_txt is not None:
@@ -527,19 +602,19 @@ def goto_date(fsdrv, days_ago, start_date, wait_sec=5):
 
     def prev_day_button_coords():
         # y=695 with advertise. handy measure at Gennady notebook. y=585 without advertise
-        return 1235, 670
+        return 1235, 585
 
     def next_day_button_coords():
-        return 1235 + 184, 670
+        return 1235 + 184, 585
 
     def neighbour_day_click(is_backward):
-        import automate2
+        import automate
 
         if is_backward:
             x, y = prev_day_button_coords()
         else:
             x, y = next_day_button_coords()
-        automate2.press_button((x, y))
+        automate.mouse_click((x, y))
         fsdrv.implicitly_wait(wait_sec)
         time.sleep(5)
 
@@ -566,7 +641,7 @@ wta_chal_tour_surf = set()  # set of (tour_name, surface)
 
 def initialize(prev_week=False):
     """must be called AFTER weeked_tours::initialize.
-    init wta_chal_tour_surf, and add to sex_tourname_surf_map"""
+       init wta_chal_tour_surf, and add to sex_tourname_surf_map"""
     wta_chal_tour_surf.clear()
     monday = tt.past_monday_date(datetime.date.today())
     if prev_week:
@@ -584,8 +659,8 @@ def initialize(prev_week=False):
 
 
 sex_tourname_surf_map = {  # here in values are more correct surface then flashscore's
-    ("wta", TourName("Chicago"), Surface("Carpet")): Surface("Hard"),
-    ("wta", TourName("Fukuoka"), Surface("Hard")): Surface("Carpet"),
-    ("wta", TourName("Kurume"), Surface("Hard")): Surface("Carpet"),
-    ("atp", TourName("ATP Cup"), Surface("Carpet")): Surface("Hard"),
+    ("wta", TourName("Chicago"), Carpet): Hard,
+    ("wta", TourName("Fukuoka"), Hard): Carpet,
+    ("wta", TourName("Kurume"), Hard): Carpet,
+    ("atp", TourName("ATP Cup"), Carpet): Hard,
 }

@@ -5,8 +5,9 @@ from functools import cmp_to_key
 from contextlib import closing
 
 import common as co
-import log
+from loguru import logger as log
 import file_utils as fu
+from surf import make_surf
 import dba
 import oncourt_db
 import qual_seeds
@@ -17,22 +18,24 @@ import stat_cont as st
 import report_line as rl
 from detailed_score_dbsa import MatchRec
 import tour_name
+import pandemia
+import lev
 
 
-def best_of_five(date, sex, tour_name, level, rnd):
+def best_of_five(date, sex, tourname, level, rnd):
     if sex == "wta":
         return False
     elif sex == "atp":
-        if level == "gs":
+        if level == lev.gs:
             if rnd is not None and rnd.main_draw():
                 return True
-            if "Wimbledon" in tour_name and rnd == "Qualifying":
+            if "wimbledon" in tourname and rnd == "Qualifying":
                 return True
             return None
-        elif level == "teamworld":
+        elif level == lev.teamworld:
             if date is not None and date.year >= 2019:
                 return False  # new best of three format was applied
-            return "ATP Cup" not in tour_name
+            return "atp-cup" not in tourname
     return False
 
 
@@ -42,41 +45,17 @@ def best_of_five2(sex, level, is_qual):
     if sex == "wta":
         return False
     elif sex == "atp":
-        if level == "gs":
+        if level == lev.gs:
             if is_qual is False:
                 return True
-        elif level == "teamworld":
+        elif level == lev.teamworld:
             return True
     return False
 
 
-class Tournament(object):
-    redundant_suffixes = (
-        "Oklahoma",
-        "California",
-        "Florida",
-        "South Carolina",
-        "Georgia",
-        "Illinois",
-        "Pennsylvania",
-        "Messachusetts",
-        "Connecticut",
-        "Arizona",
-        "Tennessee",
-        "Hawaii",
-    )
-
-    def __init__(
-        self,
-        ident,
-        name,
-        sex=None,
-        surface=None,
-        rank=None,
-        date=None,
-        money=None,
-        cou=None,
-    ):
+class Tournament:
+    def __init__(self, ident, name, sex=None, surface=None, rank=None,
+                 date=None, money=None, cou=None):
         self.ident = ident
         self.sex = sex
         self.surface = surface
@@ -176,7 +155,7 @@ class Tournament(object):
         return result
 
     def grand_slam(self):
-        return self.level.gs
+        return self.level == lev.gs
 
     @staticmethod
     def endyear_date_correction(date):
@@ -281,13 +260,11 @@ class Tournament(object):
         lhs_qual = match.first_player.ident in qual_plr_ids
         rhs_qual = match.second_player.ident in qual_plr_ids
         if lhs_qual and rhs_qual:
-            match.rnd.detailing = "qual vs qual"
             match.first_draw_status = "qual"
             match.second_draw_status = "qual"
             return
         if match.rnd == "First" or match.rnd.robin():
             if lhs_qual or rhs_qual:
-                match.rnd.detailing = "vs qual"
                 if lhs_qual:
                     match.first_draw_status = "qual"
                 else:
@@ -322,21 +299,17 @@ class Tournament(object):
                     )
                 )
         if lhs_bye and rhs_bye and consistent:
-            match.rnd.detailing = "bye vs bye"
             match.first_draw_status = "bye"
             match.second_draw_status = "bye"
         elif (lhs_qual or rhs_qual) and (lhs_bye or rhs_bye) and consistent:
-            match.rnd.detailing = "bye vs qual"
             match.first_draw_status = "qual" if lhs_qual else "bye"
             match.second_draw_status = "qual" if rhs_qual else "bye"
         elif lhs_qual or rhs_qual:
-            match.rnd.detailing = "vs qual"
             if lhs_qual:
                 match.first_draw_status = "qual"
             else:
                 match.second_draw_status = "qual"
         elif lhs_bye or rhs_bye and consistent:
-            match.rnd.detailing = "vs bye"
             if lhs_bye:
                 match.first_draw_status = "bye"
             else:
@@ -410,7 +383,7 @@ class Tournament(object):
             fhandle.write("\n")
 
 
-class SqlBuilder(object):
+class SqlBuilder:
     Row = namedtuple(
         "Row",
         [
@@ -422,16 +395,8 @@ class SqlBuilder(object):
         ],
     )
 
-    def __init__(
-        self,
-        sex,
-        todaymode,
-        min_date,
-        max_date,
-        time_reverse=False,
-        with_paired=False,
-        with_mix=False,
-    ):
+    def __init__(self, sex, todaymode, min_date, max_date, time_reverse=False,
+                 with_paired=False, with_mix=False):
         self.sex = sex
         self.todaymode = todaymode
         self.min_date = min_date
@@ -554,7 +519,7 @@ def tours_generator(
     time_reverse=False,
     with_paired=False,
     with_mix=False,
-    rnd_detailing=False,
+    rnd_detailing=False,  # if True players draw_status will be defined
     with_bets=False,
     with_stat=False,
     with_ratings=False,
@@ -578,7 +543,7 @@ def tours_generator(
             row.tour_id,
             row.tour_name,
             sex=sex,
-            surface=tennis.Surface(row.surf_txt),
+            surface=make_surf(row.surf_txt),
             rank=row.tour_rank,
             date=row.tour_dt.date() if row.tour_dt else None,
             money=row.tour_money,
@@ -939,7 +904,7 @@ def tours_from_ywn_dict(sex, min_date=None, max_date=None, with_bets=True):
         with_paired=False,
         with_bets=with_bets,
     ):
-        if tour.level == tennis.Level("junior"):
+        if tour.level == lev.junior:
             continue
         for rnd in list(tour.matches_from_rnd.keys()):
             if rnd.pre_qualification():
@@ -1011,23 +976,13 @@ def complete_with_today(tours, today_tours, with_unscored_matches=False):
 class PandemiaTours:
     """exhibition tournaments during pandemia since 2020 ~ march"""
 
-    tour_idents = {"wta": 13233, "atp": 16726}
-
-    @staticmethod
-    def is_pandemia_tour(sex: str, tour_id: int):
-        return PandemiaTours.tour_idents[sex] == tour_id
-
-    @staticmethod
-    def max_prev_pandemia_rtg_date():
-        return datetime.date(2020, 3, 16)
-
     def __init__(self):
         self._sex_recs = defaultdict(
             set
         )  # sex -> set of Tuple[rnd_txt, left_id, right_id]
 
     def init_from_det_db(self, sex: str, session):
-        tour_id = self.tour_idents[sex]
+        tour_id = pandemia.exhib_tour_id(sex)
         records = session.query(MatchRec).filter(MatchRec.tour_id == tour_id).all()
         if records:
             self._sex_recs[sex] = {(r.rnd, r.left_id, r.right_id) for r in records}
@@ -1036,7 +991,7 @@ class PandemiaTours:
     def is_match_in_det_db(self, sex, tour_id, rnd, left_id, right_id):
         rnd_txt = rnd if isinstance(rnd, str) else rnd.value
         return (
-            tour_id == self.tour_idents[sex]
+            tour_id == pandemia.exhib_tour_id(sex)
             and (rnd_txt, left_id, right_id) in self._sex_recs[sex]
         )
 
@@ -1044,7 +999,7 @@ class PandemiaTours:
         """None not pandemia event (матч можно добавлять в базу);
         False этот пандемийный матч можно добавлять в базу;
         True этот пандемийный матч следует пропустить (встречался уже)"""
-        if tour_id != self.tour_idents[sex]:
+        if tour_id != pandemia.exhib_tour_id(sex):
             return None  # not pandemia event
         rnd_txt = rnd if isinstance(rnd, str) else rnd.value
         is_exist = (rnd_txt, left_id, right_id) in self._sex_recs[sex]

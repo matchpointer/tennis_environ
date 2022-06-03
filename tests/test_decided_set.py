@@ -2,7 +2,7 @@ import unittest
 import datetime
 import copy
 
-import log
+from loguru import logger as log
 import common as co
 import dba
 from decided_set import player_winloss, initialize_results, results_dict
@@ -40,8 +40,6 @@ class WtaWinlossPlayerTest(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    log.initialize(co.logname(__file__), "info", "info")
-
     dba.open_connect()
     unittest.main()
     dba.close_connect()

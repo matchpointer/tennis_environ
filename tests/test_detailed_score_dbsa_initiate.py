@@ -1,5 +1,8 @@
 from os.path import isfile
 import datetime
+from enum import Enum
+
+import pytest
 
 import file_utils as fu
 import common as co
@@ -9,9 +12,12 @@ from score import Score
 from tennis import Round
 
 
-DB_INSTANCE = 5
+DB_INSTANCE_TEST = 5
 DBTYPENAME = dbsa.SQLITE_TYPENAME
 SEX = "wta"
+
+if DB_INSTANCE_TEST == dbsa.DEFAULT_DB_INSTANCE:
+    raise ValueError(f'testing dbsa instance {DB_INSTANCE_TEST} == work dbsa instance')
 
 
 def make_mrec_0():
@@ -92,7 +98,7 @@ def make_mrec_2():
 def remove_db_file(sex: str):
     sexes = ("wta", "atp") if sex is None else (sex,)
     for sex in sexes:
-        filename = dbsa.dbfilename(sex, DB_INSTANCE, DBTYPENAME)
+        filename = dbsa.dbfilename(sex, DB_INSTANCE_TEST, DBTYPENAME)
         if isfile(filename):
             fu.remove_file(filename)
 
@@ -107,32 +113,50 @@ def add_few_matches_to_db(handle):
     handle.commit()
 
 
-def prepare_few_matches_db(sex):
+def create_few_matches_db(sex):
     remove_db_file(sex)
-    dbsa.create_empty_db(sex=sex, instance=DB_INSTANCE, dbtypename=DBTYPENAME)
-    handle = dbsa.open_db(sex, instance=DB_INSTANCE, dbtypename=DBTYPENAME)
+    dbsa.create_empty_db(sex=sex, instance=DB_INSTANCE_TEST, dbtypename=DBTYPENAME)
+    handle = dbsa.open_db(sex, instance=DB_INSTANCE_TEST, dbtypename=DBTYPENAME)
     add_few_matches_to_db(handle)
     return handle
 
 
-hnd = prepare_few_matches_db(SEX)
+class InitMode(Enum):
+    CREATE = 1  # create db and commit stage
+    OPEN = 2  # open existed db stage
 
 
+init_mode = InitMode.OPEN
+
+
+@pytest.fixture(scope="module")
+def all_dbdet_init():
+    # Setup :
+    if init_mode == InitMode.CREATE:
+        handle = create_few_matches_db(sex=SEX)
+    elif init_mode == InitMode.OPEN:
+        handle = dbsa.open_db(sex=SEX, instance=DB_INSTANCE_TEST, dbtypename=DBTYPENAME)
+        handle.query_matches()
+    else:
+        raise ValueError(f'unsupported init_mode {init_mode}')
+
+    yield handle  # this is where the testing happens
+
+
+@pytest.mark.detscoredb
 class TestQueries:
-    @property
-    def handle(self):
-        return hnd
-
-    def test_min_max_date(self):
-        min_date = self.handle.query_min_date()
-        max_date = self.handle.query_max_date()
+    @staticmethod
+    def test_min_max_date(all_dbdet_init: dbsa.Handle):
+        min_date = all_dbdet_init.query_min_date()
+        max_date = all_dbdet_init.query_max_date()
         assert min_date is not None and max_date is not None
         assert isinstance(min_date, datetime.date)
         assert isinstance(max_date, datetime.date)
         assert min_date <= max_date
 
-    def test_find(self):
-        s = self.handle.session
+    @staticmethod
+    def test_find(all_dbdet_init: dbsa.Handle):
+        s = all_dbdet_init.session
         mrecs = (
             s.query(dbsa.MatchRec)
             .filter(
@@ -148,8 +172,9 @@ class TestQueries:
             assert mrecs[0] == tst_mrec
             assert mrecs[0].score == tst_mrec.score
 
-    def test_get_all_order_by(self):
-        s = self.handle.session
+    @staticmethod
+    def test_get_all_order_by(all_dbdet_init: dbsa.Handle):
+        s = all_dbdet_init.session
         mrecs = s.query(dbsa.MatchRec).order_by(dbsa.MatchRec.date).all()
         assert bool(mrecs)
         if mrecs:
@@ -158,8 +183,9 @@ class TestQueries:
             assert mrecs[1] == make_mrec_1()
             assert mrecs[2] == make_mrec_2()
 
-    def test_get_all_order_by_desc(self):
-        s = self.handle.session
+    @staticmethod
+    def test_get_all_order_by_desc(all_dbdet_init: dbsa.Handle):
+        s = all_dbdet_init.session
         mrecs = s.query(dbsa.MatchRec).order_by(dbsa.MatchRec.date.desc()).all()
         assert bool(mrecs)
         if mrecs:
@@ -168,17 +194,19 @@ class TestQueries:
             assert mrecs[1] == make_mrec_1()
             assert mrecs[2] == make_mrec_0()
 
-    def test_query_matches(self):
-        self.handle.query_matches(min_date=datetime.date(2020, 6, 25))
-        assert bool(self.handle.records)
-        if self.handle.records:
-            assert len(self.handle.records) == 2
-            assert self.handle.records[0] == make_mrec_1()
-            assert self.handle.records[1] == make_mrec_2()
+    @staticmethod
+    def test_query_matches(all_dbdet_init: dbsa.Handle):
+        all_dbdet_init.query_matches(min_date=datetime.date(2020, 6, 25))
+        assert bool(all_dbdet_init.records)
+        if all_dbdet_init.records:
+            assert len(all_dbdet_init.records) == 2
+            assert all_dbdet_init.records[0] == make_mrec_1()
+            assert all_dbdet_init.records[1] == make_mrec_2()
 
 
 def delete_record(sex, tour_id, rnd, left_id, right_id):
-    handle = dbsa.open_db(sex, instance=DB_INSTANCE)
+    """ простая ф-я из отдельного сценария (main). Пока не оформлена как test """
+    handle = dbsa.open_db(sex, instance=DB_INSTANCE_TEST)
     handle.query_matches()
     mrec = dbsa.MatchRec(
         date=datetime.date.today(),
@@ -210,9 +238,3 @@ def delete_record(sex, tour_id, rnd, left_id, right_id):
             f"fail delete {sex} tour_id {tour_id} rnd {rnd} pid1 {left_id} pid2 {right_id}"
         )
 
-
-if __name__ == "__main__":
-    # log.initialize(co.logname(__file__, test=True), 'debug', 'debug')
-    # delete_record(sex='wta', tour_id=13233, rnd='First', left_id=62878, right_id=13422)
-    # dbsa.create_empty_db(sex='wta', instance=DB_INSTANCE, dbtypename=DBTYPENAME)
-    pass

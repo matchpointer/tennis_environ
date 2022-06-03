@@ -1,6 +1,6 @@
 import unittest
 
-import log
+from loguru import logger as log
 import common as co
 import dba
 from oncourt_players import initialize, players
@@ -42,5 +42,4 @@ class UnitTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    log.initialize(co.logname(__file__, test=True), "debug", "debug")
     unittest.main()

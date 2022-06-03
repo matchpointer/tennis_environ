@@ -1,4 +1,3 @@
-
 cou_to_cities = {
     "ITA": ("Biella", "Ortisei", "Bergamo"),
     "GBR": ("London", "Birmingham", "Barnstaple", "Loughborough"),

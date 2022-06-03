@@ -2,18 +2,22 @@
 module for defining player features: atfirst_after_absence, atfirst_after_retired
 """
 import os
+import sys
 import datetime
 from collections import defaultdict, namedtuple
+import argparse
 from contextlib import closing
 from typing import List, Set
 
-import log
+from loguru import logger as log
 import cfg_dir
 import common as co
 import file_utils as fu
+import oncourt_players
 import score as sc
 import dba
 import feature
+
 
 ROOT = "atfirst_after"
 ASPECT_ABSENCE = "absence"
@@ -29,6 +33,8 @@ PAST_YEARS = 4
 # глубина отката в прошлое от сегодня для фиксации факта снятия
 MAX_DAYS_FOR_RETIRED = 30 * 4
 
+
+# AspectType = Union[Literal[ASPECT_ABSENCE], Literal[ASPECT_RETIRED]]
 
 root_dirname = cfg_dir.pre_live_dir(ROOT)
 
@@ -69,27 +75,46 @@ PlayerResult = namedtuple("PlayerResult", "id days_ago")
 
 # API
 def initialize_day(scheduled_events, date: datetime.date):
+    def log_report():
+        rpt = ''
+        for sx in ('wta', 'atp'):
+            rpt += (f'\nsex:{sx} n_plrs:{len(sex_to_idents[sx])}'
+                    f' evnames:{sex_to_evnames[sx]}'
+                    f' emptyevnames:{sex_to_emptyevnames[sx]}')
+        log.info(f'atfirst_after report:\n{rpt}')
+
     fu.ensure_folder(root_dirname)
-    sex_to_idents = _get_events_players(scheduled_events)
+    sex_to_idents, sex_to_evnames, sex_to_emptyevnames = _get_events_players(
+        scheduled_events)
     for sex, idents in sex_to_idents.items():
         absence_results: List[PlayerResult] = long_absence_results(idents, sex, date)
         _write_players_results(absence_results, sex, ASPECT_ABSENCE, date)
 
         retired_results: List[PlayerResult] = after_retired_results(idents, sex, date)
         _write_players_results(retired_results, sex, ASPECT_RETIRED, date)
+    log_report()
 
 
 def _get_events_players(scheduled_events):
     sex_to_idents = defaultdict(set)
+    sex_to_evnames = defaultdict(set)
+    sex_to_emptyevnames = defaultdict(set)
     for evt in scheduled_events:
         if evt.level in ("team", "future", "junior"):
             continue
+        n_evt_players = 0
         for match in evt.matches:
             if match.first_player and match.first_player.ident:
                 sex_to_idents[evt.sex].add(match.first_player.ident)
+                n_evt_players += 1
             if match.second_player and match.second_player.ident:
                 sex_to_idents[evt.sex].add(match.second_player.ident)
-    return sex_to_idents
+                n_evt_players += 1
+        if n_evt_players > 0:
+            sex_to_evnames[evt.sex].add(evt.tour_name.name)
+        elif n_evt_players == 0:
+            sex_to_emptyevnames[evt.sex].add(evt.tour_name.name)
+    return sex_to_idents, sex_to_evnames, sex_to_emptyevnames
 
 
 def long_absence_results(
@@ -188,6 +213,14 @@ def get_presence_results(
     return present_results
 
 
+def is_initialized_day(date):
+    for sex in ('wta', 'atp'):
+        for aspect in (ASPECT_ABSENCE, ASPECT_RETIRED):
+            if not os.path.isfile(players_filename(sex, aspect, date)):
+                return False
+    return True
+
+
 def _write_players_results(
     player_results: List[PlayerResult], sex: str, aspect: str, date: datetime.date
 ):
@@ -215,3 +248,53 @@ def _read_players_results(
 def players_filename(sex, aspect, date):
     return f"{root_dirname}/{co.date_to_str(date)}_{sex}_{aspect}.txt"
 
+
+def parse_command_line_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sex", choices=["wta", "atp"])
+    return parser.parse_args()
+
+
+def test_add_features():
+    pid = 8696
+    features = []
+    add_read_aspect_feature(
+        features, "wta", ASPECT_RETIRED, datetime.date.today(), pid, "fst"
+    )
+    print(f"feat len {len(features)}")
+    if features:
+        print(f"feat {features[0].name} {features[0].value}")
+
+
+def test_init_day():
+    import common_wdriver
+    from live import MatchStatus, skip_levels_work
+    from score_company import get_company
+
+    scr_company = get_company('T24')
+    oncourt_players.initialize("wta")
+    oncourt_players.initialize("atp")
+
+    drv = common_wdriver.wdriver(company=scr_company, headless=True)
+    drv.start()
+    drv.go_live_page()
+
+    initialize_day(
+        scr_company.fetch_events(
+            drv.page(),
+            skip_levels=skip_levels_work(),
+            match_status=MatchStatus.scheduled,
+        ),
+        datetime.date.today(),
+    )
+
+
+if __name__ == "__main__":
+    args = parse_command_line_args()
+    log.add('../log/atfirst_after.log', level='INFO',
+            rotation='10:00', compression='zip')
+    dba.open_connect()
+    test_init_day()
+    # unittest.main()
+    dba.close_connect()
+    sys.exit(0)

@@ -1,24 +1,11 @@
 import datetime
 from collections import Counter
 import copy
-import re
 
-import log
+from loguru import logger as log
 import common as co
 import player_name_ident
 import flashscore_match
-
-
-def tourname_number_split(tour_name):
-    m_endswith_num = tourname_number_split.ENDSWITH_NUMBER_RE.match(tour_name)
-    if m_endswith_num:
-        return m_endswith_num.group("name"), int(m_endswith_num.group("number"))
-    return tour_name, None
-
-
-tourname_number_split.ENDSWITH_NUMBER_RE = re.compile(
-    r"(?P<name>[a-zA-Z].*) (?P<number>\d\d?)$"
-)
 
 
 def log_events(events, head="", extended=True, flush=False):
@@ -105,7 +92,7 @@ def _ident_tours(tour_events, wta_tours, atp_tours, from_scored):
             if proved_tour_by_knowns(our_name_tours[0]) is not False:
                 return our_name_tours[0]
             else:
-                log.warn(
+                log.warning(
                     "finded tour {} NOT PROVED1 with {}".format(
                         our_name_tours[0], tour_evt
                     )
@@ -118,13 +105,13 @@ def _ident_tours(tour_events, wta_tours, atp_tours, from_scored):
                 if proved_tour_by_knowns(our_name_surf_tours[0]) is not False:
                     return our_name_surf_tours[0]
                 else:
-                    log.warn(
+                    log.warning(
                         "finded tour {} NOT PROVED2 with {}".format(
                             our_name_surf_tours[0], tour_evt
                         )
                     )
-        log.warn(
-            "tevt {} NOT ID-by-name-surf n_names: {}".format(
+        log.warning(
+            "tevt {} NOT ID-by-name-srf n_names: {}".format(
                 tour_evt, len(our_name_tours)
             )
         )
@@ -195,7 +182,7 @@ def _ident_rnd_date(tour_events, wta_tours, atp_tours, from_scored):
                                 match.date is not None
                                 and abs((m.date - match.date).days) > 1
                             ):
-                                log.warn(
+                                log.warning(
                                     "{} mdatedif rn: {}, m: {}, match: {} q:{}".format(
                                         tour.sex, rnd, m, match, match.qualification
                                     )
@@ -204,7 +191,7 @@ def _ident_rnd_date(tour_events, wta_tours, atp_tours, from_scored):
                             if m.date <= (today_date + datetime.timedelta(days=1)):
                                 match.date = m.date
                             else:
-                                log.warn(
+                                log.warning(
                                     "{}mdate-fut {} found\n{} identing\n{}".format(
                                         tour.sex, m.date, m, match
                                     )
@@ -221,7 +208,7 @@ def _ident_rnd_date(tour_events, wta_tours, atp_tours, from_scored):
             for match in tour_evt.matches:
                 if not ident_match_rnd_date(match, tour):
                     n_warns += 1
-                    log.warn(
+                    log.warning(
                         "in {} {} not idented rnd-date match: {}".format(
                             tour_evt.sex, tour.name, match
                         )
@@ -236,12 +223,12 @@ def _log_noident_players(tour_events):
             fst_ok, snd_ok = True, True
             if match.first_player is None or match.first_player.ident is None:
                 fst_ok = False
-                log.warn(
+                log.warning(
                     "IN {} not idented [1] match: {}".format(tour_evt.tour_name, match)
                 )
             if match.second_player is None or match.second_player.ident is None:
                 snd_ok = False
-                log.warn(
+                log.warning(
                     "IN {} not idented [2] match: {}".format(tour_evt.tour_name, match)
                 )
             if (int(fst_ok) + int(snd_ok)) == 1:
@@ -260,11 +247,11 @@ def _ident_players(tour_events):
         for match in tour_evt.matches:
             if match.first_player is None or match.first_player.ident is None:
                 match.first_player = player_name_ident.identify_player(
-                    "FS", tour_evt.sex, get_abbr_name_side(match.name, co.LEFT)
+                    tour_evt.sex, get_abbr_name_side(match.name, co.LEFT)
                 )
             if match.second_player is None or match.second_player.ident is None:
                 match.second_player = player_name_ident.identify_player(
-                    "FS", tour_evt.sex, get_abbr_name_side(match.name, co.RIGHT)
+                    tour_evt.sex, get_abbr_name_side(match.name, co.RIGHT)
                 )
 
 

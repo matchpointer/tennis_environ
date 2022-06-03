@@ -8,7 +8,8 @@ import tkinter.ttk
 import tkinter.constants as tkc
 
 import common as co
-import log
+from loguru import logger as log
+from surf import make_surf
 import score as sc
 import tennis
 import cfg_dir
@@ -405,7 +406,7 @@ class ThirdBestOfThreePage(tkinter.ttk.Frame):
                 filename,
                 keyfun=str,
                 createfun=lambda: defaultdict(lambda: None),
-                valuefun=st.WinLoss.create_from_text,
+                valuefun=st.WinLoss.from_text,
             )
 
         self.clear_indicators()
@@ -520,7 +521,7 @@ class ThirdBestOfThreePage(tkinter.ttk.Frame):
             filename,
             createfun=lambda: defaultdict(lambda: None),
             keyfun=str,
-            valuefun=st.WinLoss.create_from_text,
+            valuefun=st.WinLoss.from_text,
         )
         key = "{}-{} {}-{}".format(
             set_first[0], set_first[1], set_second[0], set_second[1]
@@ -551,8 +552,7 @@ class Application(tkinter.Frame):
         return self.sex_var.get()
 
     def level(self):
-        if self.level_var.get():
-            return tennis.Level(self.level_var.get())
+        return self.level_var.get()
 
     def left_player(self):
         return self.__find_player(self.left_player_name_var.get())
@@ -574,7 +574,7 @@ class Application(tkinter.Frame):
         return sc.Score(self.score_var.get())
 
     def surface(self):
-        return tennis.Surface(self.surface_var.get())
+        return make_surf(self.surface_var.get())
 
     def rnd(self):
         return tennis.Round(self.round_var.get())
@@ -895,12 +895,6 @@ class Application(tkinter.Frame):
 def main():
     try:
         args = parse_command_line_args()
-        log.initialize(
-            co.logname(__file__, instance=args.instance),
-            file_level="debug",
-            console_level="info",
-        )
-        log.info("\n--------------------------------------------------------\nstarted")
         dba.open_connect()
         oncourt_players.initialize()
         ratings.initialize("wta", rtg_names=("elo",))
@@ -921,7 +915,7 @@ def main():
         dba.close_connect()
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
+        log.exception("{0} [{1}]".format(err, err.__class__.__name__))
         return 1
 
 

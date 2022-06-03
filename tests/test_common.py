@@ -1,5 +1,6 @@
 import unittest
 
+import lev
 from common import (
     Keys,
     strip_fragment,
@@ -11,61 +12,48 @@ from common import (
     centered_int_flip,
     centered_float_flip,
     twoside_values,
+    split_ontwo,
 )
+from tennis import Round
+
+
+class SplitOntwoTest(unittest.TestCase):
+    def test_split_ontwo(self):
+        text = "abc  -  def"
+        p1, p2 = split_ontwo(text, " - ")
+        self.assertTrue(p1 == "abc" and p2 == "def")
 
 
 class KeysTest(unittest.TestCase):
     def test_soft_main_init(self):
-        import tennis
-
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("main"), rnd=tennis.Round("Second")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.main, rnd=Round("Second"))
         self.assertEqual(keys["level"], "main")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("main"), rnd=tennis.Round("q-First")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.main, rnd=Round("q-First"))
         self.assertEqual(keys["level"], "qual")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("masters"), rnd=tennis.Round("Second")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.masters, rnd=Round("Second"))
         self.assertEqual(keys["level"], "main")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("masters"), rnd=tennis.Round("q-First")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.masters, rnd=Round("q-First"))
         self.assertEqual(keys["level"], "main")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("gs"), rnd=tennis.Round("Second")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.gs, rnd=Round("Second"))
         self.assertEqual(keys["level"], "main")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("gs"), rnd=tennis.Round("q-First")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.gs, rnd=Round("q-First"))
         self.assertEqual(keys["level"], "qual")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("chal"), rnd=tennis.Round("Second")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.chal, rnd=Round("Second"))
         self.assertEqual(keys["level"], "chal")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("chal"), rnd=tennis.Round("q-First")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.chal, rnd=Round("q-First"))
         self.assertEqual(keys["level"], "chal")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("future"), rnd=tennis.Round("Second")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.future, rnd=Round("Second"))
         self.assertEqual(keys["level"], "future")
 
-        keys = Keys.soft_main_from_raw(
-            level=tennis.Level("future"), rnd=tennis.Round("q-First")
-        )
+        keys = Keys.soft_main_from_raw(level=lev.future, rnd=Round("q-First"))
         self.assertEqual(keys["level"], "future")
 
 

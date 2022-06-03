@@ -1,14 +1,40 @@
 import datetime
 
-import log
+from loguru import logger as log
+import lev
 import common as co
 import score as sc
 import stat_cont as st
-from tennis import Level, get_rnd_metric
+from tennis import get_rnd_metric
 import weeked_tours
 import matchstat
 import feature
 import tennis_time as tt
+
+
+def add_nmatches_features(features, sex, ywn_hist_lst, pid1, pid2, featprefix: str):
+    """
+    ywn_hist_lst - начиная с текущей недели match назад на нужную глубину.
+      (ywn_hist_lst[0] supposed is current match yweek)
+    Before call weeked_tours must be initialized from necessary past weeks.
+    """
+
+    def get_nmatches(pid):
+        nmatches = 0
+        for ywn in ywn_hist_lst:
+            for tr in weeked_tours.tours(sex, ywn):
+                for matches in tr.matches_from_rnd.values():
+                    for mch in matches:
+                        if mch.paired():
+                            continue
+                        if pid in (mch.first_player.ident, mch.second_player.ident):
+                            nmatches += 1
+        return nmatches
+
+    fst_nmatches = get_nmatches(pid1)
+    snd_nmatches = get_nmatches(pid2)
+    feature.add_pair(features, corename=featprefix,
+                     fst_value=fst_nmatches, snd_value=snd_nmatches)
 
 
 def add_prevyear_tour_features(features, sex, ywn_hist_lst, tour, match):
@@ -42,20 +68,18 @@ def add_prevyear_tour_features(features, sex, ywn_hist_lst, tour, match):
     if tour.level in ("team", "teamworld") or len(ywn_hist_lst) < (weeksago1 + 1):
         feature.add_pair(features, "prevyear_tour_rnd", fst_value=0.0, snd_value=0.0)
         return
-    ywn_slice = ywn_hist_lst[weeksago1 : min(len(ywn_hist_lst), weeksago2)]
+    ywn_slice = ywn_hist_lst[weeksago1: min(len(ywn_hist_lst), weeksago2)]
     fst_rnd = prev_year_rnd(match.first_player.ident)
     snd_rnd = prev_year_rnd(match.second_player.ident)
 
     if fst_rnd is None:
         fst_metric = 0.0
     else:
-        fst_rnd.detailing = None
         fst_metric = get_rnd_metric(fst_rnd)
 
     if snd_rnd is None:
         snd_metric = 0.0
     else:
-        snd_rnd.detailing = None
         snd_metric = get_rnd_metric(snd_rnd)
     feature.add_pair(
         features, "prevyear_tour_rnd", fst_value=fst_metric, snd_value=snd_metric
@@ -205,7 +229,7 @@ def fatig_lsr_coef(sex, tour, rnd):
     grand_slam_mdraw = (
         tour.grand_slam() and not rnd.qualification() and not rnd.pre_qualification()
     )
-    if tour.level in (Level("team"), Level("teamworld")):
+    if tour.level in (lev.team, lev.teamworld):
         weight = 1.4 if tour.surface == "Clay" else 1.3
     elif grand_slam_mdraw:
         weight = 1.25 if tour.surface == "Clay" else 1.18
@@ -512,8 +536,10 @@ def _visit_fatigue_match(
     daysago = (trg_match.date - match.date).days
     if paired:
         total = sc.paired_match_games_count(tour, match.score, load_mode=True)
-    else:
+    elif match.score is not None:
         total = match.score.games_count(load_mode=True)
+    else:
+        return fst_games, snd_games
     coef = fatig_summary_coef(params_key, sex, daysago, tour, rnd, paired)
     value = total * coef
     if side_left:
@@ -547,7 +573,7 @@ def find_tail_tour_by_attr(sex, tour_name, level, surface):
 
     if not sex or not tour_name or not level or not surface:
         msg = (
-            "nofull attr find_tail_tour_by_attr sex: {} tn: {} lev: {} surf: {}".format(
+            "nofull attr find_tail_tour_by_attr sex: {} tn: {} lev: {} srf: {}".format(
                 sex, tour_name, level, surface
             )
         )
@@ -583,6 +609,14 @@ def tour_adapt_features(trg_tour, trg_match, min_value=-60):
                                      then get -m passed days after last single match
     return (fst_plr_feat, snd_plr_feat).
     trg_tour is None -> try find tour from tail_tours by trg_match.live_event.tour_id
+
+    Возможная доработка:
+         учесть случаи когда на прошлой неделе игрался такой же турнир (с меньшим номером)
+         в том же городе и стой же повер-тью и если там был участник целевого матча
+         (в турнире с большим номером), то этому участнику следует доначислить в плюсовую сумму
+         число сыгранных матчей на прошлой неделе.
+         Прецедент для возм. проверки: 2021-12-06 Copil - Vatutin 7-6 3-6 3-6 Forli 3 1st rnd,
+         Vatutin был хорошо прибит к условиям (Carpet) т.к. играл 5 матчей (2 in qual) в Forli 2
     """
 
     def trg_tour_ply_value(player):
@@ -636,7 +670,7 @@ def tour_adapt_features(trg_tour, trg_match, min_value=-60):
         if trg_tour is None:
             msg = (
                 "fail find_tail_tour id: {} for match {}\n\t"
-                + "sex: {} tourname: {} level: {} surf: {} qual: {}"
+                "sex: {} tourname: {} level: {} srf: {} qual: {}"
             ).format(
                 trg_match.live_event.tour_id,
                 trg_match.tostring(extended=True),

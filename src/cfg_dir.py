@@ -94,18 +94,12 @@ def betcity_dir():
     return cf.getval("dirs", "betcity")
 
 
-def predicts_dir(company_name):
-    if company_name == "BC":
-        return os.path.join(betcity_dir(), "predicts")
-    elif company_name == "FS":
-        return os.path.join(flashscore_dir(), "predicts")
+def predicts_dir():
+    return os.path.join(flashscore_dir(), "predicts")
 
 
-def lines_dir(company_name, sport="Tennis"):
-    if company_name == "BC":
-        return os.path.join(betcity_dir(), "lines", sport)
-    elif company_name == "FS":
-        return os.path.join(flashscore_dir(), "lines", sport)
+def lines_dir(sport="Tennis"):
+    return os.path.join(flashscore_dir(), "lines", sport)
 
 
 def detailed_score_dir():

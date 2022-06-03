@@ -1,4 +1,5 @@
 ﻿import sys
+import unittest
 from collections import OrderedDict, namedtuple
 if sys.version_info >= (3, 9):
     from collections import abc
@@ -7,16 +8,18 @@ else:
 from functools import reduce
 from typing import List, Dict
 
-import log
+from loguru import logger as log
 import common as co
 from stat_cont import WinLoss
 from feature import Feature, RigidFeature, make_pair2, make_pair, FeatureList
 from score import Scr, nil_scr, ingame_to_num, tie_normalized
-from tennis import soft_level, Match
+from tennis import Match
+from lev import soft_level
 from detailed_score import SetItems, error_contains
 import ratings_elo
 from side import Side
 from markov import set_win_prob2, tie_win_prob2
+from stat_cont import EdgeScrTrack
 
 
 class Calc(metaclass=abc.ABCMeta):
@@ -313,6 +316,33 @@ class CalcLastinrow(Calc):
             self.fst_lastrow_games = inrow if setwinner == co.LEFT else -inrow
 
 
+class CalcOnsetsrvCount(Calc):
+
+    feat_corename = "onsetsrvcount"
+
+    def __init__(self):
+        self.fst_cnt = 0
+        self.snd_cnt = 0
+
+    def result_features(self, prefix: str) -> List[Feature]:
+        """ prefix задает номер сета """
+        f1, f2 = make_pair(
+            fst_name=f"{prefix}_fst_{self.feat_corename}",
+            snd_name=f"{prefix}_snd_{self.feat_corename}",
+            fst_value=self.fst_cnt,
+            snd_value=self.snd_cnt,
+        )
+        return [f1, f2]
+
+    def proc_set(self, setitems: SetItems):
+        edge_scr_track = EdgeScrTrack()
+        for scr, dg in setitems:
+            if not dg.tiebreak:
+                edge_scr_track.put(x=scr[0], y=scr[1], left_serve=dg.left_opener)
+        self.fst_cnt = edge_scr_track.serveonset_count(co.LEFT)
+        self.snd_cnt = edge_scr_track.serveonset_count(co.RIGHT)
+
+
 class CalcSrvRatio(Calc):
 
     feat_corename = "srv_ratio"  # win ratio
@@ -347,7 +377,7 @@ class CalcSrvRatio(Calc):
         if abs(fin_scr[0] - fin_scr[1]) <= 1:
             x = max(4, fin_scr[0] + 2)
             return x, fin_scr[1]
-        log.warn(
+        log.warning(
             f"lose fin {fin_scr} game winner CalcSrvRatio::complete_usial_fin_score"
         )
         return 5, 4
@@ -492,8 +522,9 @@ def common_features(sex: str, tour, best_of_five, match: Match) -> FeatureList:
             flip_value=None if fst_bet_chance is None else 1.0 - fst_bet_chance,
         )
     )
-    ratings_elo.add_features(sex, tour.surface, match, result)
-    ratings_elo.add_features(sex, tour.surface, match, result, isalt=True)
+    ratings_elo.add_features(
+        sex, tour.surface, match, result,
+        corenames=['elo_pts', 'elo_alt_pts', 'elo_rank', 'elo_alt_rank'])
     co.add_pair(
         result,
         *make_pair2(
@@ -516,53 +547,12 @@ def _simple_calc_features(sex, match, level, surface) -> List[Feature]:
             CalcSimulGames(),
             CalcEmptyGames(),
             CalcAbsentGames(),
-            CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.55),
-            CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.58),
-            CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.60),
-            CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.62),
-            CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.65),
-            CalcWinclose(
-                sex,
-                surface,
-                level,
-                match.rnd.qualification(),
-                min_prob=0.55,
-                is_mean=True,
-            ),
-            CalcWinclose(
-                sex,
-                surface,
-                level,
-                match.rnd.qualification(),
-                min_prob=0.58,
-                is_mean=True,
-            ),
-            CalcWinclose(
-                sex,
-                surface,
-                level,
-                match.rnd.qualification(),
-                min_prob=0.60,
-                is_mean=True,
-            ),
-            CalcWinclose(
-                sex,
-                surface,
-                level,
-                match.rnd.qualification(),
-                min_prob=0.62,
-                is_mean=True,
-            ),
-            CalcWinclose(
-                sex,
-                surface,
-                level,
-                match.rnd.qualification(),
-                min_prob=0.65,
-                is_mean=True,
-            ),
+            CalcOnsetsrvCount(),
         ],
-        2: [CalcExistScr()],
+        2: [
+            CalcExistScr(),
+            CalcOnsetsrvCount(),
+        ],
     }
 
     res_features = []
@@ -590,76 +580,6 @@ def decspecific_calc_features(
 
     setitems_dict: Dict[int, SetItems] = match.set_items
     prev_decided(best_of_five, setitems_dict, CalcLastinrow(), res_features)
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.55),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.58),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.60),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.62),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(sex, surface, level, match.rnd.qualification(), min_prob=0.65),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(
-            sex, surface, level, match.rnd.qualification(), min_prob=0.55, is_mean=True
-        ),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(
-            sex, surface, level, match.rnd.qualification(), min_prob=0.58, is_mean=True
-        ),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(
-            sex, surface, level, match.rnd.qualification(), min_prob=0.60, is_mean=True
-        ),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(
-            sex, surface, level, match.rnd.qualification(), min_prob=0.62, is_mean=True
-        ),
-        res_features,
-    )
-    prev_decided(
-        best_of_five,
-        setitems_dict,
-        CalcWinclose(
-            sex, surface, level, match.rnd.qualification(), min_prob=0.65, is_mean=True
-        ),
-        res_features,
-    )
 
     cumulate_to_prev_decided(best_of_five, setitems_dict, CalcSrvRatio(), res_features)
     cumulate_to_prev_decided(
@@ -723,3 +643,10 @@ def cumulate_to_prev_decided(
         calc.proc_set(setitems_dict[3])
         calc.proc_set(setitems_dict[4])
     res_features.extend(calc.result_features(prefix="sspd"))
+
+
+if __name__ == "__main__":
+    log.add('../log/detailed_score_calc.log', level='INFO',
+            rotation='10:00', compression='zip')
+
+    unittest.main()

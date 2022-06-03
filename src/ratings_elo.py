@@ -2,34 +2,60 @@ import os
 from collections import defaultdict
 import datetime
 import argparse
-from typing import List
+from typing import List, Optional, DefaultDict, Tuple, NamedTuple
 
 from recordclass import recordclass
 
 import file_utils as fu
 import cfg_dir
 import dba
-import log
-import common as co
+from loguru import logger as log
 import oncourt_players
 import tennis_time as tt
 from score import is_dec_supertie_scr
 import feature
+import pandemia
 
 _surface_keys = ("all", "Clay", "Hard", "Carpet", "Grass")
 
 Cell = recordclass("Cell", ("elo_pts", "elo_alt_pts", "n_matches"))
 
 
-# (sex, surface_as_text)-> default dict{player_id -> (elo_pts, n_matches)}
-# for universal (all surfaces) use surface_as_text='all'
-_sex_surf_dict = defaultdict(lambda: defaultdict(lambda: Cell(1500.0, 1500.0, 0)))
+class CellEmulType(NamedTuple):
+    elo_pts: float
+    elo_alt_pts: float
+    n_matches: int
 
 
-# (sex, surface_as_text)-> default dict{player_id -> rank} for actual players only
-# for universal (all surfaces) use surface_as_text='all'
-_rank_dict = defaultdict(lambda: defaultdict(lambda: None))
-_rank_alt_dict = defaultdict(lambda: defaultdict(lambda: None))
+SexSurf_Pid_Cell = DefaultDict[
+    Tuple[
+        str,  # sex
+        str  # surface ('all' is also possible for universal)
+    ],
+    DefaultDict[
+        int,  # player_id
+        CellEmulType
+    ]
+]
+
+_sex_surf_dict: SexSurf_Pid_Cell = defaultdict(
+    lambda: defaultdict(lambda: Cell(1500.0, 1500.0, 0))
+)
+
+
+# for actual players only
+SexSurf_Pid_Rank = DefaultDict[
+    Tuple[
+        str,  # sex
+        str,  # surface ('all' is also possible for universal)
+    ],
+    DefaultDict[
+        int,  # player_id
+        Optional[int]  # rank
+    ]
+]
+_rank_dict: SexSurf_Pid_Rank = defaultdict(lambda: defaultdict(lambda: None))
+_rank_alt_dict: SexSurf_Pid_Rank = defaultdict(lambda: defaultdict(lambda: None))
 
 
 def rank_dict(isalt: bool):
@@ -46,7 +72,7 @@ def initialize(sex=None, date=None):
                 file_date = _last_file_date(sex, surface)
                 if file_date is None:
                     raise Exception(
-                        "not found last file date for {} surf: {}".format(sex, surface)
+                        "not found last file date for {} srf: {}".format(sex, surface)
                     )
             filename = dict_filename(sex, file_date, surface)
             load_json(sex, filename, surface)
@@ -79,6 +105,9 @@ def _init_ranks(sex=None, isalt=False):
 
 
 def make_files(sex, max_date=None, is_actual_players=True):
+    """ write out json files. For each player: 'key_id': [elo_val, elo_alt_val, size]
+        for surface file write analogic data with respect surface.
+    """
     import oncourt_db
 
     clear(sex)
@@ -93,10 +122,12 @@ def make_files(sex, max_date=None, is_actual_players=True):
         dump_json(sex, filename, surface, is_actual_players=is_actual_players)
 
 
-def make_reper_files(max_date=datetime.date(2009, 12, 27)):
-    """utility for initial creating file on concrete date"""
+def make_reper_files(max_date):
+    """ utility for initial creating file on concrete (passed) date
+        write out json files. For each player: 'key_id': [elo_val, elo_alt_val, size]
+        for surface file write analogic data with respect surface.
+    """
     for sex in ("wta", "atp"):
-        clear(sex)
         make_files(sex=sex, max_date=max_date, is_actual_players=False)
 
 
@@ -199,8 +230,6 @@ def put_match_data(sex: str, tour, rnd, match, is_pandemia_tour=False):
 
 
 def put_match(sex: str, tour, rnd, match):
-    from tournament import PandemiaTours
-
     """ assumed: matches incomes in time ascending order """
     if (
         tour.level in ("junior",)
@@ -215,7 +244,7 @@ def put_match(sex: str, tour, rnd, match):
         tour,
         rnd,
         match,
-        is_pandemia_tour=PandemiaTours.is_pandemia_tour(sex, tour.ident),
+        is_pandemia_tour=pandemia.exhib_tour_id(sex) == tour.ident,
     )
 
 
@@ -226,7 +255,7 @@ def get_pts(sex: str, player_id: int, surface="all", isalt=False):
         return _sex_surf_dict[(sex, str(surface))][player_id].elo_pts
 
 
-def get_rank(sex: str, player_id: int, surface="all", isalt=False):
+def get_rank(sex: str, player_id: int, surface="all", isalt=False) -> Optional[int]:
     rank_dct = rank_dict(isalt)
     return rank_dct[(sex, str(surface))][player_id]
 
@@ -236,30 +265,33 @@ def get_matches_played(sex: str, player_id: int, surface="all"):
 
 
 def add_features(
-    sex: str, surface, match, features: List[feature.Feature], isalt=False
+    sex: str, surface, match, features: feature.FeatureList, corenames: List[str]
 ):
-    fst_pts = get_pts(sex, match.first_player.ident, isalt=isalt)
-    snd_pts = get_pts(sex, match.second_player.ident, isalt=isalt)
-    core = "elo_alt" if isalt else "elo"
-    f1, f2 = feature.make_pair(
-        f"fst_{core}_pts", f"snd_{core}_pts", fst_value=fst_pts, snd_value=snd_pts
-    )
-    features.append(f1)
-    features.append(f2)
+    for corename in corenames:
+        assert corename in ('elo_pts', 'elo_alt_pts', 'elo_rank', 'elo_alt_rank')
+        ispts = 'pts' in corename
+        isalt = 'alt' in corename
+        if ispts:
+            fst_val = get_pts(sex, match.first_player.ident, isalt=isalt)
+            snd_val = get_pts(sex, match.second_player.ident, isalt=isalt)
+        else:
+            fst_val = get_rank(sex, match.first_player.ident, isalt=isalt)
+            snd_val = get_rank(sex, match.second_player.ident, isalt=isalt)
 
-    if surface in ("Clay", "Hard", "Carpet", "Grass"):
-        fst_surf_pts = get_pts(sex, match.first_player.ident, surface, isalt=isalt)
-        snd_surf_pts = get_pts(sex, match.second_player.ident, surface, isalt=isalt)
-        fs1, fs2 = feature.make_pair(
-            f"fst_surf_{core}_pts",
-            f"snd_surf_{core}_pts",
-            fst_value=fst_surf_pts,
-            snd_value=snd_surf_pts,
-        )
-        features.append(fs1)
-        features.append(fs2)
-    else:
-        raise Exception("empty/none surface in {} {}".format(sex, match))
+        f1, f2 = feature.make_pair(
+            f"fst_{corename}", f"snd_{corename}", fst_value=fst_val, snd_value=snd_val)
+        features.append(f1)
+        features.append(f2)
+
+        if ispts:
+            assert surface in ("Clay", "Hard", "Carpet", "Grass")
+            fst_surf_val = get_pts(sex, match.first_player.ident, surface, isalt=isalt)
+            snd_surf_val = get_pts(sex, match.second_player.ident, surface, isalt=isalt)
+            fs1, fs2 = feature.make_pair(
+                f"fst_surf_{corename}", f"snd_surf_{corename}",
+                fst_value=fst_surf_val, snd_value=snd_surf_val)
+            features.append(fs1)
+            features.append(fs2)
 
 
 def clear(sex: str):
@@ -395,16 +427,27 @@ def parse_command_line_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sex", choices=["wta", "atp", "both"])
     parser.add_argument("--make_files", action="store_true")
+    parser.add_argument("--make_reper_files", action="store_true")
+    parser.add_argument("--max_date", type=str, default=None)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
+    log.add('../log/ratings_elo.log', level='INFO')
     args = parse_command_line_args()
-    log.initialize(co.logname(__file__), file_level="info", console_level="info")
-    log.info("started with {} make_files: {}".format(args.sex, args.make_files))
     if args.make_files:
         for sex in ("wta", "atp"):
             if sex == args.sex or args.sex == "both":
-                log.info("starting {}".format(sex))
+                log.info("make_files starting {}".format(sex))
                 make_files(sex)
                 log.info("done {}".format(sex))
+    elif args.make_reper_files:
+        assert args.sex in ('both', None)
+        if args.max_date is None:
+            max_date = datetime.date(2009, 12, 27)
+        else:
+            max_date = datetime.datetime.strptime(args.max_date, "%Y-%m-%d").date()
+        log.info(f"make_reper_files started max_date: {max_date}")
+        make_reper_files(max_date=max_date)
+    else:
+        log.error("use --make_files or --make_reper_files")

@@ -4,11 +4,12 @@ from collections import defaultdict, namedtuple
 import argparse
 from contextlib import closing
 
-import log
+from loguru import logger as log
 import cfg_dir
 import common as co
 import file_utils as fu
 import dict_tools
+import lev
 import stat_cont as st
 import score as sc
 import tennis
@@ -18,11 +19,12 @@ import dba
 import ratings_std
 import feature
 from clf_common import RANK_STD_BOTH_ABOVE, RANK_STD_MAX_DIF
+import pandemia
 
 ASPECT = "decided_win_by_set2_winner"
 
-DISABLE_LEVELS = ("team", "future", "junior")
-ENABLE_SOFT_LEVELS = ("main", "chal", "qual")
+DISABLE_LEVELS = (lev.team, lev.future, lev.junior)
+ENABLE_SOFT_LEVELS = (lev.main, lev.chal, "qual")
 
 MIN_SIZE_DEFAULT = 5
 
@@ -33,6 +35,7 @@ data_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(st.WinLoss)))
 
 
 def add_feature(features, sex, soft_level, date, set1_score, set2_score):
+    """ добавить в features суммарный рез-т из памяти по неделям, предшествующим date """
     wl = decided_winloss_by_set2_winner(sex, soft_level, date, set1_score, set2_score)
     if wl.size <= MIN_SIZE_DEFAULT:
         features.append(feature.RigidFeature(name=ASPECT))
@@ -47,6 +50,7 @@ def add_empty_feature(features):
 
 
 def decided_winloss_by_set2_winner(sex, soft_level, date, set1_score, set2_score):
+    """ получить суммарный результат из памяти по неделям, предшествующим date """
     set1, set2 = _make_set2winner_orient(set1_score, set2_score)
     in_ywn = tt.get_year_weeknum(date)
     wl_res = st.WinLoss()
@@ -58,8 +62,8 @@ def decided_winloss_by_set2_winner(sex, soft_level, date, set1_score, set2_score
     return wl_res
 
 
-def read_decided_winloss_by_set2_winner(sex, soft_level, set1_score, set2_score):
-    if sex is None or soft_level is None:
+def read_decided_winloss_by_set2_winner(sex: str, soft_level: str, set1_score, set2_score):
+    if sex is None or soft_level:
         log.error("bad sex {}, or soft_level {}".format(sex, soft_level))
         return None
     set1, set2 = _make_set2winner_orient(set1_score, set2_score)
@@ -67,7 +71,7 @@ def read_decided_winloss_by_set2_winner(sex, soft_level, set1_score, set2_score)
     if not score_dict:
         log.error("fail score_dict sex: {}, soft_level {}".format(sex, soft_level))
         return None
-    return score_dict[(set1, set2)]
+    return score_dict.get((set1, set2))
 
 
 def read_decided_win_ratio(match, side):
@@ -100,17 +104,13 @@ def _make_set2winner_orient(set1_score, set2_score):
     return set1, set2
 
 
-def initialize(sex):
-    max_date = None  # datetime.date(2010, 1, 1)
+def fill_data(sex, min_date=None, max_date=None):
+    """ ratings_std уже д.б. инициализирован для переданного интервала времени """
     if not dba.initialized():
         dba.open_connect()
-    min_date = None  # tt.now_minus_history_days(get_history_days(sex))
-    ratings_std.initialize(
-        sex=sex, min_date=None  # min_date - datetime.timedelta(days=7),
-    )
 
     if sex in ("wta", None):
-        _initialize_results_sex(
+        _fill_results_sex(
             "wta",
             max_rating=RANK_STD_BOTH_ABOVE,
             max_rating_dif=RANK_STD_MAX_DIF,
@@ -118,20 +118,19 @@ def initialize(sex):
             max_date=max_date,
         )
     if sex in ("atp", None):
-        _initialize_results_sex(
+        _fill_results_sex(
             "atp",
             max_rating=RANK_STD_BOTH_ABOVE,
             max_rating_dif=RANK_STD_MAX_DIF,
             min_date=min_date,
             max_date=max_date,
         )
-    ratings_std.clear(sex)
 
 
-def _initialize_results_sex(
+def _fill_results_sex(
     sex, max_rating, max_rating_dif, min_date=None, max_date=None
 ):
-    sql = """select tours.DATE_T, tours.NAME_T, tours.RANK_T, tours.PRIZE_T, 
+    sql = """select tours.ID_T, tours.DATE_T, tours.NAME_T, tours.RANK_T, tours.PRIZE_T, 
                    games.ID_R_G, games.RESULT_G, games.ID1_G, games.ID2_G
              from Tours_{0} AS tours, games_{0} AS games, Players_{0} AS fst_plr
              where games.ID_T_G = tours.ID_T 
@@ -144,6 +143,7 @@ def _initialize_results_sex(
     sql += " order by tours.DATE_T;"
     with closing(dba.get_connect().cursor()) as cursor:
         for (
+            tour_id,
             tour_dt,
             tour_name,
             db_rank,
@@ -156,6 +156,8 @@ def _initialize_results_sex(
             date = tour_dt.date() if tour_dt else None
             if date is None:
                 raise co.TennisScoreError("none date {}".format(tour_name))
+            if pandemia.exhib_tour_id(sex) == tour_id:
+                continue
             if not score_txt:
                 continue
             scr = sc.Score(score_txt)
@@ -184,13 +186,13 @@ def _initialize_results_sex(
             )
             if level in DISABLE_LEVELS:
                 continue
-            if level is None:
+            if not level:
                 raise co.TennisError(
-                    "none level date: {} scr: {} name: {}".format(date, scr, tour_name)
+                    "empty level date: {} scr: {} name: {}".format(date, scr, tour_name)
                 )
             rnd = tennis.Round.from_oncourt_id(rnd_id)
-            soft_level = tennis.soft_level(level, rnd)
-            if soft_level is None:
+            soft_level = lev.soft_level(level, rnd)
+            if not soft_level:
                 raise co.TennisError(
                     "none soft_level date: {} scr: {} name: {}".format(
                         date, scr, tour_name
@@ -306,17 +308,14 @@ read_scores_dict.cache = dict()  # (sex, level) -> scores_dict
 
 
 def do_stat():
-    log.initialize(
-        co.logname(__file__, instance=str(args.sex)),
-        file_level="debug",
-        console_level="info",
-    )
     try:
+        dba.open_connect()
         msg = "sex: {} max_rtg: {}  max_rtg_dif: {}".format(
             args.sex, args.max_rating, args.max_rating_dif
         )
         log.info(__file__ + " started {}".format(msg))
-        initialize(args.sex)
+        ratings_std.initialize(sex=args.sex, min_date=None)
+        fill_data(args.sex, min_date=None, max_date=None)
         maker = StatMaker(args.sex)
         maker.process_all()
         log.info(__file__ + " done {}".format(ASPECT))
@@ -325,7 +324,7 @@ def do_stat():
         log.info(__file__ + " finished sex: {}".format(args.sex))
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
+        log.exception("{0} [{1}]".format(err, err.__class__.__name__))
         return 1
 
 
@@ -342,4 +341,7 @@ def parse_command_line_args():
 if __name__ == "__main__":
     args = parse_command_line_args()
     if args.stat:
+        log.add('../log/decided_win_by_two_sets_stat.log', level='INFO',
+                rotation='10:00', compression='zip')
+
         sys.exit(do_stat())

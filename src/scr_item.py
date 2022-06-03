@@ -143,7 +143,8 @@ class SrvPair(Pair):
 
     def flip(self):
         super(SrvPair, self).flip()
-        self.srv_side = self.srv_side.fliped()
+        if self.srv_side is not None:
+            self.srv_side = self.srv_side.fliped()
 
     def is_local_left_opener_tie_orientation(self):
         """True if x:y correspond for x is tie opener side

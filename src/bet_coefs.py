@@ -1,15 +1,29 @@
 import copy
 from collections import defaultdict
 from contextlib import closing
+from typing import DefaultDict, List, Tuple
 
-import log
+from loguru import logger as log
 import tennis_time as tt
 import tennis
 import bet
 import dba
 
-# (sex, bettor_id) -> OrderedDefaultDict{year_weeknum -> [DbOffer,...]}
-dboffers_dict = defaultdict(lambda: defaultdict(list))
+SexBettor_YearWeeknum_DbOfferList = DefaultDict[
+    Tuple[
+        str,  # sex
+        int  # bettor_id
+    ],
+    DefaultDict[
+        Tuple[
+            int,  # year
+            int  # week num
+        ],
+        List[bet.DbOffer]
+    ]
+]
+
+dboffers_dict: SexBettor_YearWeeknum_DbOfferList = defaultdict(lambda: defaultdict(list))
 
 PINNACLE_ID = 2
 MARATHON_ID = 1

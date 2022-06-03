@@ -1,6 +1,6 @@
 import unittest
 
-import log
+from loguru import logger as log
 import common as co
 import dba
 from decided_win_by_two_sets_stat import ENABLE_SOFT_LEVELS, read_scores_dict
@@ -19,7 +19,6 @@ class ReadFilesTest(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    log.initialize(co.logname(__file__, test=True), "info", "info")
     unittest.main()
     dba.close_connect()
 

@@ -8,23 +8,40 @@ from typing import Optional
 from enum import IntEnum
 
 import common as co
+import decided_set
 import feature
-import last_results
-import log
+import get_features
+import inset_keep_recovery
+from last_results import LastResults
+from loguru import logger as log
+from surf import Clay, Grass
+from bet import WinCoefs
+import matchstat
 import pre_live_dir
 import ratings
 import report_line as rl
 import score as sc
+import set2_after_set1loss_stat
 import stat_cont as st
 import stopwatch
-import tennis
+from tennis import Match, Round, Player, HeadToHead
 import player_name_ident
 import tennis_time as tt
+import total
 import tournament as trmt
 import weeked_tours
+import trail_choke_stat
+import tie_stat
 from clf_common import FeatureError
+import after_tie_perf_stat
+import atfirst_after
 from live_tourinfo import TourInfo
 from tour_name import TourName
+from debug_helper import (
+    add_debug_match_data, add_debug_match_feat_dict, get_debug_match_name
+)
+import advantage_tie_ratio
+import lev
 
 
 class LiveEventToskipError(co.TennisError):
@@ -39,20 +56,9 @@ class MatchStatus(IntEnum):
 
 class MatchSubStatus(IntEnum):
     interrupted = 4
-    retired = 5
+    retired = 5  # also covers 'walkover'
     cancelled = 6
-
-
-def initialize():
-    from flashscore import initialize as flashscore_init
-
-    flashscore_init()
-
-
-def initialize_players_cache(webpage):
-    from flashscore import initialize_players_cache as flashscore_init_cache
-
-    flashscore_init_cache(webpage)
+    # also exist 'awaiting updates'
 
 
 def skip_levels_default():
@@ -64,29 +70,9 @@ def skip_levels_default():
 
 def skip_levels_work():
     return {
-        "wta": ("junior", "future", "team", "qual", "chal"),
-        "atp": ("junior", "future", "team", "qual", "chal"),
+        "wta": ("junior", "future", "team", "teamworld"),
+        "atp": ("junior", "future", "team", "teamworld", "gs"),
     }
-
-
-def get_events(
-    webpage,
-    skip_levels,
-    match_status=MatchStatus.live,
-    company_name="FS",
-    target_date=None,
-):
-    from flashscore import make_events
-
-    if company_name == "FS":
-        return make_events(
-            webpage,
-            skip_levels=skip_levels,
-            match_status=match_status,
-            target_date=target_date,
-        )
-    else:
-        raise co.TennisError("unsupported company_name: '{}'".format(company_name))
 
 
 def back_year_weeknums(max_weeknum_dist):
@@ -109,25 +95,24 @@ back_year_weeknums.lst = None
 back_year_weeknums.max_dist = None
 
 
-class LiveMatch(tennis.Match):
+class LiveMatch(Match):
     min_decset_date = datetime.date.today() - datetime.timedelta(days=365 * 3)
 
     def __init__(self, live_event):
-        super(LiveMatch, self).__init__()
+        super().__init__()
         self.live_event = live_event
         self.name = None  # sample: 'Federer R. - Nadal R.'
         self.href = None
         self.define_players_tried = False
         self.fill_details_tried = False
-        self.is_special = False  # True if source self.name endswith ' (aces)' (betcity)
         self.left_service = None
         self.ingame = None  # sample: ('A', '40')
         self.worked_alerts = []
         self.srvw_stat = (
             None  # obj for players history for serve/receive (matchstat.py)
         )
-        self.fst_last_res = None
-        self.snd_last_res = None
+        self.fst_last_res: Optional[LastResults] = None
+        self.snd_last_res: Optional[LastResults] = None
         self.quad_stat = st.QuadServiceStat()
         self.set_opener_tracker = st.SetOpenerMatchTracker()
         self.kill_timer = None
@@ -190,7 +175,7 @@ class LiveMatch(tennis.Match):
 
     @property
     def soft_level(self) -> str:
-        return tennis.soft_level(self.level, self.rnd, self.qualification)
+        return lev.soft_level(self.level, self.rnd, self.qualification)
 
     @property
     def surface(self):
@@ -290,6 +275,13 @@ class LiveMatch(tennis.Match):
             if left_service_new is not None and left_service_new != left_service:
                 left_service = left_service_new
 
+        if self.name == get_debug_match_name():
+            add_debug_match_data(score, ingame, left_service)
+            if len(score) == 2 and score[-1] == (0, 0) and ingame == ('0', '0'):
+                add_debug_match_feat_dict('secondset_00', self.features)
+            elif len(score) == 3 and score[-1] == (0, 0) and ingame == ('0', '0'):
+                add_debug_match_feat_dict('decided_00', self.features)
+
         scores_same = (self.score, self.ingame, self.left_service) == (
             score,
             ingame,
@@ -313,9 +305,6 @@ class LiveMatch(tennis.Match):
             return co.LEFT if self.left_service else co.RIGHT
         else:
             return co.RIGHT if self.left_service else co.LEFT
-
-    def special(self):
-        return self.is_special
 
     def hashid(self, sex=None, add_text=""):
         text = ""
@@ -355,9 +344,9 @@ class LiveMatch(tennis.Match):
             return
         self.check_unknown = True
         if self.first_player is None or self.first_player.ident is None:
-            log.warn("unknown left {} {}".format(self.name, self.live_event))
+            log.warning("unknown left {} {}".format(self.name, self.live_event))
         if self.second_player is None or self.second_player.ident is None:
-            log.warn("unknown right {} {}".format(self.name, self.live_event))
+            log.warning("unknown right {} {}".format(self.name, self.live_event))
 
     def players_defined(self):
         return (
@@ -367,7 +356,7 @@ class LiveMatch(tennis.Match):
             and self.second_player.ident is not None
         )
 
-    def define_players(self, company_name, sex):
+    def define_players(self, sex: str):
         if self.define_players_tried:
             return self.players_defined()
         self.define_players_tried = True
@@ -380,28 +369,162 @@ class LiveMatch(tennis.Match):
             timer = stopwatch.Timer()
             if not self.first_player:
                 self.first_player = player_name_ident.identify_player(
-                    company_name, sex, abbr_names[0].strip()
-                )
+                    sex, abbr_names[0].strip())
             if not self.second_player:
                 self.second_player = player_name_ident.identify_player(
-                    company_name, sex, abbr_names[1].strip()
-                )
+                    sex, abbr_names[1].strip())
             if self.first_player and self.second_player:
                 self.read_ratings(sex)
                 self.read_birth_date(sex)
-                self.head_to_head = tennis.HeadToHead(sex, self, completed_only=True)
+                self.head_to_head = HeadToHead(sex, self, completed_only=True)
                 self.h2h_direct = self.head_to_head.direct()
-                self.fst_last_res = last_results.LastResults(
-                    sex, self.first_player.ident, weeks_ago=5
+                self.fst_last_res = LastResults(sex, self.first_player.ident)
+                self.snd_last_res = LastResults(sex, self.second_player.ident)
+                self.decset_ratio_dif = decided_set.get_dif_ratio(
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    min_date=self.min_decset_date,
+                    max_date=datetime.date.today())
+                self.decset_bonus_dif = decided_set.get_dif_bonus(
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    min_date=self.min_decset_date,
+                    max_date=datetime.date.today())
+                (
+                    self.hist_fst_srv_win,
+                    self.hist_fst_rcv_win,
+                ) = matchstat.player_srvrcv_win(
+                    self.sex,
+                    self.first_player.ident,
+                    back_year_weeknums(max_weeknum_dist=matchstat.HIST_WEEKS_NUM),
+                    self.surface,
+                    12)
+                (
+                    self.hist_snd_srv_win,
+                    self.hist_snd_rcv_win,
+                ) = matchstat.player_srvrcv_win(
+                    self.sex,
+                    self.second_player.ident,
+                    back_year_weeknums(max_weeknum_dist=matchstat.HIST_WEEKS_NUM),
+                    self.surface,
+                    12)
+                self.features = []
+                self.features.append(
+                    feature.RigidFeature(
+                        "recently_winner_id", self.head_to_head.recently_won_player_id()
+                    )
                 )
-                self.snd_last_res = last_results.LastResults(
-                    sex, self.second_player.ident, weeks_ago=5
+                get_features.add_fatigue_features(
+                    self.features,
+                    self.sex,
+                    back_year_weeknums(max_weeknum_dist=30),
+                    self,
+                    rnd=None,
                 )
-                # other features temporary removed
+                get_features.add_prevyear_tour_features(
+                    self.features,
+                    self.sex,
+                    back_year_weeknums(max_weeknum_dist=56),
+                    self.live_event,
+                    self,
+                )
+                get_features.add_nmatches_features(
+                    self.features,
+                    self.sex,
+                    back_year_weeknums(max_weeknum_dist=56)[:52],
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    featprefix='pastyear_nmatches',
+                )
+                f1tradp, f2tradp = get_features.tour_adapt_features(None, self)
+                self.features.append(f1tradp)
+                self.features.append(f2tradp)
+                f1set2r, f2set2r = set2_after_set1loss_stat.read_features_pair(
+                    self.sex,
+                    "set2win_after_set1loss",
+                    self.first_player.ident,
+                    self.second_player.ident,
+                )
+                self.features.append(f1set2r)
+                self.features.append(f2set2r)
+                f1set2k, f2set2k = set2_after_set1loss_stat.read_features_pair(
+                    self.sex,
+                    "set2win_after_set1win",
+                    self.first_player.ident,
+                    self.second_player.ident,
+                )
+                self.features.append(f1set2k)
+                self.features.append(f2set2k)
+
+                inset_keep_recovery.add_read_features(
+                    self.features,
+                    self.sex,
+                    ("decided",),
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    sizes_shift=-3,
+                    feat_suffix="_sh-3",
+                )
+
+                trail_choke_stat.add_agr_read_features(
+                    self.features,
+                    self.sex,
+                    "trail",
+                    None,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                )
+                trail_choke_stat.add_agr_read_features(
+                    self.features,
+                    self.sex,
+                    "choke",
+                    None,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                )
+
+                tie_stat.add_read_sv_features_pair(
+                    self.features,
+                    "sd_tie_ratio",
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    ("decided",),
+                    min_size=2,
+                    is_ratio=True,
+                )
+
+                after_tie_perf_stat.add_read_features_pair(
+                    self.features,
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    after_tie_perf_stat.ASPECT_PRESS,
+                )
+                after_tie_perf_stat.add_read_features_pair(
+                    self.features,
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                    after_tie_perf_stat.ASPECT_UNDER,
+                )
+
+                atfirst_after.add_read_features(
+                    self.features,
+                    self.sex,
+                    self.first_player.ident,
+                    self.second_player.ident,
+                )
+
             self.def_plr_seconds = timer.elapsed
         return self.players_defined()
 
     def load_pre_live_data(self):
+        """ deserializing: read dct from json file,
+              and load values mainly to self.features and some other attrs """
+
         def simple_feature(name):
             if name in dct:
                 self.features.append(feature.RigidFeature(name=name, value=dct[name]))
@@ -420,11 +543,9 @@ class LiveMatch(tennis.Match):
                 fst_val = rl.SizedValue(*dct[fst_name])
                 snd_val = rl.SizedValue(*dct[snd_name])
                 self.features.append(
-                    feature.Feature(name=fst_name, value=fst_val, flip_value=snd_val)
-                )
+                    feature.Feature(name=fst_name, value=fst_val, flip_value=snd_val))
                 self.features.append(
-                    feature.Feature(name=snd_name, value=snd_val, flip_value=fst_val)
-                )
+                    feature.Feature(name=snd_name, value=snd_val, flip_value=fst_val))
 
         def plr_feature(name):
             fst_name = f"fst_{name}"
@@ -433,13 +554,11 @@ class LiveMatch(tennis.Match):
                 fst_val = dct[fst_name]
                 snd_val = dct[snd_name]
                 self.features.append(
-                    feature.Feature(name=fst_name, value=fst_val, flip_value=snd_val)
-                )
+                    feature.Feature(name=fst_name, value=fst_val, flip_value=snd_val))
                 self.features.append(
-                    feature.Feature(name=snd_name, value=snd_val, flip_value=fst_val)
-                )
+                    feature.Feature(name=snd_name, value=snd_val, flip_value=fst_val))
 
-        def player_load(prefix: str, player: tennis.Player):
+        def player_load(prefix: str, player: Player):
             player.ident = dct.get(prefix + "_player_id")
             player.name = dct.get(prefix + "_player_name")
             player.rating = ratings.Rating(dct.get(prefix + "_player_rating"))
@@ -459,23 +578,56 @@ class LiveMatch(tennis.Match):
 
         dct = pre_live_dir.get_data(self.pre_live_name())
         if self.first_player is None:
-            self.first_player = tennis.Player()
+            self.first_player = Player()
         if self.second_player is None:
-            self.second_player = tennis.Player()
+            self.second_player = Player()
         player_load("fst", self.first_player)
         player_load("snd", self.second_player)
         if "rnd" in dct:
             rnd_txt = dct["rnd"]
             if rnd_txt:
                 rnd_txt_parts = rnd_txt.split(";")
-                self.rnd = tennis.Round(rnd_txt_parts[0])
+                self.rnd = Round(rnd_txt_parts[0])
         self.decset_ratio_dif = dct.get("decset_ratio_dif")
         self.decset_bonus_dif = dct.get("decset_bonus_dif")
         self.h2h_direct = dct.get("h2h_direct")
 
         self.features = []
         simple_feature("recently_winner_id")
-        # other features temporary removed
+        plr_feature("fatigue")
+        plr_feature("plr_tour_adapt")
+        plr_feature("prevyear_tour_rnd")
+        plr_feature("set2win_after_set1loss")
+        plr_feature("set2win_after_set1win")
+        plr_feature("decided_begin_sh-3")
+        plr_feature("decided_keep_sh-3")
+        plr_feature("decided_recovery_sh-3")
+        plr_feature("trail")
+        plr_feature("choke")
+        plr_feature("absence")
+        plr_feature("retired")
+        plr_feature(after_tie_perf_stat.ASPECT_UNDER)
+        plr_feature(after_tie_perf_stat.ASPECT_PRESS)
+        plr_feature("pastyear_nmatches")
+        plr_sv_feature("sd_tie_ratio")
+        simple_feature(f"{advantage_tie_ratio.ADV_PREF}sd_tie_ratio")
+
+        if "fst_win_coef" in dct and "snd_win_coef" in dct:
+            fst_wcoef, snd_wcoef = dct["fst_win_coef"], dct["snd_win_coef"]
+            if fst_wcoef is not None and snd_wcoef is not None:
+                if not self.offer.win_coefs:
+                    self.offer.win_coefs = WinCoefs(fst_wcoef, snd_wcoef)
+
+        if "fst_draw_status" in dct and "snd_draw_status" in dct:
+            self.first_draw_status = dct["fst_draw_status"]
+            self.second_draw_status = dct["snd_draw_status"]
+
+        if "fst_last_res" in dct:
+            self.fst_last_res = LastResults.from_week_results(
+                dct["fst_last_res"])
+        if "snd_last_res" in dct:
+            self.snd_last_res = LastResults.from_week_results(
+                dct["snd_last_res"])
 
     def abbr_rating_info(self, rtg_name="elo"):
         result = "-"
@@ -496,8 +648,7 @@ class LiveMatch(tennis.Match):
         )
         if extended:
             if self.quad_stat:
-                result += " {}\n\t\t{} sec: {:.1f}".format(
-                    self.quad_stat.allow_bp_stat.tostring(),
+                result += "\n\t\t{} sec: {:.1f}".format(
                     str(self.quad_stat),
                     self.def_plr_seconds,
                 )
@@ -531,31 +682,42 @@ class LiveMatch(tennis.Match):
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def quad_stat_advantage_side(self, min_size=22, eps=None):
-        if eps is None:
-            eps = 0.04 if self.sex == "wta" else 0.05
-        if not self.quad_stat:
+    def change_surf_advantage_side(self):
+        if not self.fst_last_res or not self.snd_last_res:
             return None
-        fstwl = self.quad_stat.srv_win_loss(side=co.LEFT)
-        sndwl = self.quad_stat.srv_win_loss(side=co.RIGHT)
-        if fstwl.size < min_size or sndwl.size < min_size:
-            return None
-        cmpval = co.value_compare(fstwl.ratio, sndwl.ratio, eps)
-        if cmpval == co.EQ:
-            return None
-        elif cmpval == co.GT:  # fst has adv
-            return co.LEFT
-        else:  # snd has adv
-            return co.RIGHT
+        if (
+            self.surface in (Clay, Grass)
+            and self.rnd in (Round('q-First'), Round('q-Second'),
+                             Round('First'), Round('Second'))
+        ):
+            srf_in_fst_hist = self.surface in self.fst_last_res.surface_list(weeks_ago=8)
+            srf_in_snd_hist = self.surface in self.snd_last_res.surface_list(weeks_ago=8)
+            if srf_in_fst_hist and not srf_in_snd_hist:
+                return co.LEFT
+            if not srf_in_fst_hist and srf_in_snd_hist:
+                return co.RIGHT
 
     def last_res_advantage_side(self):
         if not self.fst_last_res or not self.snd_last_res:
             return None
-        if (self.level in ("masters", "gs") and self.rnd >= tennis.Round("Fourth")) or (
-            self.level == "main" and self.rnd >= tennis.Round("1/2")
+        if (self.level in ("masters", "gs") and self.rnd >= Round("Fourth")) or (
+            self.level == "main" and self.rnd >= Round("1/2")
         ):
             return None  # players are deep in tournament
+        fst_long_poor = self.fst_last_res.long_poor_practice()
+        snd_long_poor = self.snd_last_res.long_poor_practice()
+        if fst_long_poor and not snd_long_poor:
+            return co.RIGHT
+        if not fst_long_poor and snd_long_poor:
+            return co.LEFT
+
         fst_bonuses, snd_bonuses = 0, 0
+        # fst_ratio = self.fst_last_res.best_win_streak_ratio(min_ratio=0.777, min_size=8)
+        # snd_ratio = self.snd_last_res.best_win_streak_ratio(min_ratio=0.777, min_size=8)
+        # if fst_ratio and fst_ratio > (snd_ratio + 0.2):
+        #     fst_bonuses += 1
+        # if not fst_ratio and snd_ratio > (fst_ratio + 0.2):
+        #     snd_bonuses += 1
 
         fst_poor = self.fst_last_res.poor_practice()
         snd_poor = self.snd_last_res.poor_practice()
@@ -678,12 +840,11 @@ class LiveMatch(tennis.Match):
         )
 
 
-class LiveTourEvent(object):
+class LiveTourEvent:
     def __init__(self, tour_info=None, matches=None):
         self.tour_info: Optional[TourInfo] = tour_info
         self.tour_id = None
         self.matches = matches if matches is not None else []
-        self.is_special = None  # True означает ставки не на победу (betcity)
         self.kill_timer = None
         self.matches_key = ""
         self.filled_matches_key = (
@@ -707,16 +868,10 @@ class LiveTourEvent(object):
         if self.tour_info is not None:
             return self.tour_info.decided_tiebreak
 
-    def special(self):
-        return self.is_special
-
     def live_betable(self):
         if self.doubles or self.level in ("future", "junior"):
             return False
-        if self.qualification and (
-            (self.sex == "atp" and self.level not in ("gs", "masters"))
-            or (self.sex == "wta" and self.level not in ("gs", "masters", "main"))
-        ):
+        if self.qualification and self.level not in ("gs", "masters", "main"):
             return False
         return True
 
@@ -743,15 +898,11 @@ class LiveTourEvent(object):
         for tour in co.find_all(tours, lambda t: t.name == self.tour_name):
             if ident_in_tour():
                 return True
-        # try find tour without tour_name equal (maybe Davis/Fed Cup?)
-        for tour in tours:
-            if ident_in_tour():
-                return True
         return False
 
-    def define_players(self, company_name):
+    def define_players(self):
         for match in self.matches:
-            match.define_players(company_name, self.sex)
+            match.define_players(self.sex)
 
     def pre_live_name(self):
         if self.sex and self.tour_name:
@@ -779,10 +930,25 @@ class LiveTourEvent(object):
                 for fname, fval in dct.items():
                     self.features.append(feature.RigidFeature(name=fname, value=fval))
                 return
+            aset_sv = total.get_tour_avgset(
+                self.sex,
+                self.level == "chal",
+                self.best_of_five,
+                self.surface,
+                self.tour_name,
+                self.qualification,
+                max_year=datetime.date.today().year - 1,
+            )
+            if aset_sv:
+                self.features.append(
+                    feature.RigidFeature(name="tour_avgset", value=aset_sv.value)
+                )
+                dct = {"tour_avgset": aset_sv.value}
+                pre_live_dir.save_data(self.pre_live_name(), dct)
 
     def define_level(self):
         if self.tour_info is not None and (
-            self.tour_info.level is None or self.tour_id is None
+            not self.tour_info.level or self.tour_id is None
         ):
             tours = weeked_tours.tail_tours(self.sex)
             for m in self.matches:
@@ -791,8 +957,8 @@ class LiveTourEvent(object):
                         tours, m.first_player.ident, m.second_player.ident
                     ):
                         return
-            if self.tour_info.level is None and self.tour_info.itf:
-                self.tour_info.level = tennis.Level("future")
+            if not self.tour_info.level and self.tour_info.itf:
+                self.tour_info.level = lev.future
 
     def fill_matches_details(self):
         if self.tour_info is not None and self.tour_id is not None:
@@ -841,14 +1007,10 @@ class LiveTourEvent(object):
     name = tour_name
 
     def __str__(self):
-        if self.is_special:
-            return "spec " + str(self.tour_info)
         return str(self.tour_info)
 
     def __eq__(self, other):
-        return self.tour_info == other.tour_info and bool(self.is_special) == bool(
-            other.is_special
-        )
+        return self.tour_info == other.tour_info
 
     def __ne__(self, other):
         return not self.__eq__(other)

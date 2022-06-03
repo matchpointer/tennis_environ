@@ -25,18 +25,17 @@ from selenium.webdriver.common.keys import Keys
 
 from retry_decorator import retry
 
-import log
+from loguru import logger as log
 import common as co
 
 
 @retry(TimeoutException, tries=3)
 def _make_driver_chrome(headless):
     opt = ChromeOptions()
+    opt.add_argument("javascriptEnabled=True")
     if headless:
         opt.add_argument("--headless")
         opt.add_argument("--disable-gpu")
-    else:
-        opt.add_argument("javascriptEnabled=True")
     driver = webdriver.Chrome(options=opt)  # here arg is optional by API
     return driver
 
@@ -44,6 +43,7 @@ def _make_driver_chrome(headless):
 @retry(TimeoutException, tries=3)
 def _make_driver_firefox(headless):
     opt = FirefoxOptions()
+    opt.add_argument("javascriptEnabled=True")
     if headless:
         opt.add_argument("--headless")
         opt.add_argument("--disable-gpu")
@@ -137,9 +137,9 @@ def load_url(driver, url, try_max=5):
             WebDriverWait(driver, 60 * 20).until(
                 EC.alert_is_present(), "Timed out waiting for alert popup creation"
             )
-            log.warn("Alert present passed")
+            log.warning("Alert present passed")
             driver.switch_to_alert().accept()
-            log.warn("Alert accepted successfully")
+            log.warning("Alert accepted successfully")
         except (TimeoutException, NoAlertPresentException) as alert_err:
             log.error(
                 "waitforalert {} [{}] try_max: {} url: {}".format(

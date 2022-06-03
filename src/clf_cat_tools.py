@@ -1,9 +1,6 @@
 from collections import namedtuple
 
 import numpy as np
-import matplotlib.pyplot as plt
-
-from sklearn.metrics import average_precision_score, precision_recall_curve
 
 from catboost import CatBoostClassifier, Pool, cv
 
@@ -64,10 +61,22 @@ class DataCatBoost(cco.Data):
         w_eval=None,
         w_test=None,
     ):
-        super(DataCatBoost, self).__init__(
+        super().__init__(
             X_train, y_train, X_eval, y_eval, X_test, y_test, w_train, w_eval, w_test
         )
         self.cat_features = None if not cat_features_idx else cat_features_idx
+
+    def exist_cat(self):
+        return bool(self.cat_features)
+
+    def tolist(self):
+        cat_indices = [] if not self.cat_features else self.cat_features
+        if self.train:
+            self.train.tolist(cat_indices)
+        if self.eval:
+            self.eval.tolist(cat_indices)
+        if self.test:
+            self.test.tolist(cat_indices)
 
 
 Pools = namedtuple("Pools", "train eval test")
@@ -123,7 +132,9 @@ def train_model(
     assert isinstance(pools, Pools)
     print("train_model start with metric {},  {}".format(metric_name, kwargs))
 
-    if metric_name != "AUC":
+    if metric_name == 'Logloss':
+        params = {}
+    elif metric_name != "AUC":
         params = {"custom_loss": [metric_name, "AUC"]}
     else:
         params = {"custom_loss": [metric_name]}
@@ -193,8 +204,8 @@ def cross_validation(
 def get_test_result(variant, clf, pool: Pool):
     probs = clf.predict_proba(pool)
     poswl, negwl = st.WinLoss(), st.WinLoss()
-    min_pos_proba = variant.min_proba
-    min_neg_proba = variant.get_min_neg_proba()
+    min_pos_proba = variant.min_probas.pos
+    min_neg_proba = variant.min_probas.neg
     for prob01, lab in zip(probs, pool.get_label()):
         if min_pos_proba is not None and prob01[1] >= min_pos_proba:
             poswl.hit(lab == 1)
@@ -222,8 +233,8 @@ def get_test_result(variant, clf, pool: Pool):
 def get_test_result_3class(variant, clf, pool: Pool):
     probs = clf.predict_proba(pool)
     poswl, negwl = st.WinLoss(), st.WinLoss()
-    min_pos_proba = variant.min_proba
-    min_neg_proba = variant.get_min_neg_proba()
+    min_pos_proba = variant.min_probas.pos
+    min_neg_proba = variant.min_probas.neg
     for prob0z1, lab in zip(probs, pool.get_label()):
         if min_pos_proba is not None and prob0z1[2] >= min_pos_proba:
             poswl.hit(lab == 1)
@@ -247,36 +258,3 @@ def get_test_result_3class(variant, clf, pool: Pool):
         pos_profit=pos_profit,
     )
 
-
-def plot_prec_recall_check(clf, data, pos_proba=0.5):
-    """from mueller."""
-    assert clf.is_fitted(), "not fitted clf"
-    X_test, y_test = data.eval.X, data.eval.y
-    if X_test is None or y_test is None:
-        X_test, y_test = data.test.X, data.test.y
-        if X_test is None or y_test is None:
-            print("X_eval y_eval (or X_test, y_test) must be prepared")
-            return
-    pred_pos_proba = clf.predict_proba(X_test)[:, 1]
-
-    avgprec = average_precision_score(y_test, pred_pos_proba)
-    print("Average precision: {:.3f}".format(avgprec))
-
-    precision_fr, recall_fr, thresholds_fr = precision_recall_curve(
-        y_test, pred_pos_proba, pos_label=1
-    )
-    plt.plot(precision_fr, recall_fr, label="fr")
-    close_default_fr = np.argmin(np.abs(thresholds_fr - pos_proba))
-    plt.plot(
-        precision_fr[close_default_fr],
-        recall_fr[close_default_fr],
-        "^",
-        c="k",
-        markersize=10,
-        label="threshold {:.2f} fr".format(pos_proba),
-        fillstyle="none",
-        mew=2,
-    )
-    plt.xlabel("Precision")
-    plt.ylabel("Recall")
-    plt.legend(loc=2)

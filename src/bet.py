@@ -1,6 +1,6 @@
 from typing import NamedTuple
 
-import log
+from loguru import logger as log
 import common as co
 import score as sc
 import stat_cont as st
@@ -639,7 +639,7 @@ class Sager:
             if sag_current > self.sag:
                 self.sag = sag_current
 
-    def __str__(self):
+    def __repr__(self):
         return "$sag:{0:.1f}".format(self.sag)
 
 
@@ -650,7 +650,7 @@ class FlatProfiter(object):
         self.money_delta = 0.0
         self.win_loss = st.WinLoss()
 
-    def __str__(self):
+    def __repr__(self):
         return "roi:{0} $dif:{1:.2f} WL:{2}".format(
             self.roi_ratio() or "", self.money_delta, self.win_loss
         )
@@ -690,8 +690,8 @@ class FlatLimitedProfiter(FlatProfiter):
             super(FlatLimitedProfiter, self).calculate_bet(coef, iswin)
             self.sager.set_current_money(self.current_money())
 
-    def __str__(self):
-        result = super(FlatLimitedProfiter, self).__str__()
+    def __repr__(self):
+        result = super(FlatLimitedProfiter, self).__repr__()
         return result + " " + str(self.sager)
 
     def __lt__(self, other):

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 import re
 import copy
@@ -7,7 +8,7 @@ from typing import Tuple, List, Optional, TYPE_CHECKING
 
 from side import Side
 import common as co
-import log
+from loguru import logger as log
 import feature
 
 if TYPE_CHECKING:
@@ -228,7 +229,7 @@ def tie_serve_side_at(num_ingame, tie_open_side: Side) -> Side:
         return tie_open_side.fliped()
 
 
-def get_tie_open_side(num_ingame, serve_side: Side) -> Side:
+def get_tie_open_side(num_ingame, serve_side: Side) -> Optional[Side]:
     """По текущему num_ingame (2-tuple) и подающему вернем открывателя тайбрейка
 
     >>> get_tie_open_side((0, 0), serve_side=co.LEFT)
@@ -244,6 +245,8 @@ def get_tie_open_side(num_ingame, serve_side: Side) -> Side:
     >>> get_tie_open_side((1, 5), serve_side=co.RIGHT)
     Side('LEFT')
     """
+    if serve_side is None:
+        return None  # bad input, hence bad output
     summa = (num_ingame[0] + num_ingame[1]) % 4
     if summa in (0, 3):
         return serve_side
@@ -656,7 +659,7 @@ class Score(object):
             return (2, 0), (2, 1), (1, 2), (0, 2)
 
     def features(self) -> List[feature.Feature]:
-        result = []
+        result: List[feature.Feature] = []
         for idx in range(5):
             fst_name = f"s{idx + 1}_fst_games"
             snd_name = f"s{idx + 1}_snd_games"
@@ -991,21 +994,21 @@ def decided_tiebreak(
     if tour_name is None:
         return None
 
-    if "Wildcard" in tour_name and "Australian Open" in tour_name:
+    if "wildcard" in tour_name and "australian-open" in tour_name:
         return ao_wildcard_tiebreak()
-    if "Olympics" in tour_name:
+    if "olympics" in tour_name:
         return year >= 2016
 
     if qualification is None:
         return None
 
-    if "Wimbledon" in tour_name:
+    if "wimbledon" in tour_name:
         if qualification:
             return False
         return year >= 2019 if sex == "atp" else False
-    elif "French Open" in tour_name:
-        return year >= 2017 and qualification
-    elif "Australian Open" in tour_name:
+    elif "french-open" in tour_name:
+        return (year >= 2017 and qualification) or year >= 2022
+    elif "australian-open" in tour_name:
         if year >= 2019:
             return True
         if sex == "wta":
@@ -1080,10 +1083,12 @@ def get_decided_tiebreak_info(
     elif is_tiebreak is None:
         return default_tie_info
 
+    if year >= 2022 and "french-open" in tour_name:
+        return TieInfo(beg_scr=(6, 6), is_super=True)
     if year >= 2019:
-        if "Australian Open" in tour_name:
+        if "australian-open" in tour_name:
             return TieInfo(beg_scr=(6, 6), is_super=True)
-        if "Wimbledon" in tour_name:
+        if "wimbledon" in tour_name:
             return TieInfo(beg_scr=(12, 12), is_super=False)
         if sex == "wta" and qualification:
             if (
@@ -1120,7 +1125,7 @@ def get_decided_tiebreak_info_ext(
         tour.sex == "wta"
         and (
             tour.level in ("future", "chal")
-            or "All Lower level tournaments" in tour.name
+            or "all-lower-level-tournaments" in tour.name
         )
         and is_dec_supertie_scr(dec_set, score.retired)
     ):
@@ -1182,7 +1187,7 @@ def paired_match_sets_count(tour, score, full=False):
         win, loss = score[set_idx]
         if win > 0 or loss > 0:
             set_num = set_idx + 1
-            if set_num == 3 and tour.name == "Wimbledon":
+            if set_num == 3 and "wimbledon" in tour.name:
                 if not full or (full and max(win, loss) >= 6):
                     result += 1
             elif set_num == 3 and max(win, loss) >= 10:
@@ -1198,7 +1203,7 @@ def paired_match_games_count(tour, score, load_mode=False):
         win, loss = score[set_idx]
         if win > 0 or loss > 0:
             set_num = set_idx + 1
-            if set_num == 3 and max(win, loss) >= 10 and "Wimbledon" not in tour.name:
+            if set_num == 3 and max(win, loss) >= 10 and "wimbledon" not in tour.name:
                 result += 3  # champion tie (it is not set, assume as 3 games)
             else:
                 result += win + loss
@@ -1296,3 +1301,5 @@ def strong_lead_side(cur_score, ingame, srv_side: Side) -> Optional[Side]:
         return cur_set_lead_side
     elif not cur_set_lead_side:
         return prev_sets_lead_side
+    return None
+

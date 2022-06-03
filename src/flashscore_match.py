@@ -39,7 +39,7 @@ class TitleScore:
         self.is_left_srv: Optional[bool] = is_left_srv
         self.finished: Optional[bool] = finished
 
-    def __str__(self):
+    def __repr__(self):
         res = ""
         if self.inmatch:
             res = f"inm:{self.inmatch}"
@@ -51,7 +51,7 @@ class TitleScore:
             res += f" srv_left:{self.is_left_srv}"
         if self.finished:
             res += " finished"
-        return res if res else "<empty title scr>"
+        return (res if res else "<empty title scr>") + " " + hex(id(self))
 
     def inset_games_count(self):
         if self.inset is not None:
@@ -76,30 +76,30 @@ class TitleScore:
                 return prob_set_winner
 
 
-def build_root(url, fsdriver, verbose: bool = False):
+def build_root(url, fsdriver, verbose: bool = False, print_err=print):
     wdriver.load_url(fsdriver.drv, url)
     fsdriver.implicitly_wait(3)
     page = fsdriver.page()
     if page is None:
         if verbose:
-            print(f"not fetched summary page in {url}")
+            print_err(f"not fetched summary page in {url}")
         return None
     parser = lxml.html.HTMLParser(encoding="utf8")
     tree = lxml.html.document_fromstring(page, parser)  # lxml.html.HtmlElement
     if tree is None:
         if verbose:
-            print(f"fail build root url:{url}")
+            print_err(f"fail build root url:{url}")
         return None
     content_el = co.find_first_xpath(tree, '//*[@id="detail"]')
     if content_el is None:
         if verbose:
-            print(f"fail tennis/detail url:{url}")
+            print_err(f"fail tennis/detail url:{url}")
         return None
     return content_el
 
 
 def parse_odds(
-    summary_href, fsdriver, verbose: bool = False
+    summary_href, fsdriver, verbose: bool = False, print_err=print
 ) -> Optional[Tuple[float, float, bool]]:
     def is_live_active():
         qtxt = 'descendant::div[@class="tabs__tab selected" and text() = "Live odds"]'
@@ -122,32 +122,33 @@ def parse_odds(
     odds = get_odds()
     if len(odds) != 2:
         if verbose:
-            print(f"fail odds: {odds}")
+            print_err(f"fail odds: {odds}")
         return None
     return odds[0], odds[1], is_live_active()
 
 
-def parse_title_score(summary_href, fsdriver, verbose: bool = False) -> TitleScore:
+def parse_title_score(summary_href, fsdriver,
+                      verbose: bool = False, print_err=print) -> TitleScore:
     """return TitleScore or None."""
 
     def is_left_serve():
         xpath_txt = (
-            "child::div[starts-with(@class, 'home___')]/"
-            "div[starts-with(@class, 'participantServe___')]/"
+            "child::div[@class='duelParticipant__home']/"
+            "div[@class='participant__participantServe']/"
             "div[@title='Serving player']"
         )
         return co.find_first_xpath(entry_elem0, xpath_txt) is not None
 
     def is_right_serve():
         xpath_txt = (
-            "child::div[starts-with(@class, 'away___')]/"
-            "div[starts-with(@class, 'participantServe___')]/"
+            "child::div[@class='duelParticipant__away']/"
+            "div[@class='participant__participantServe']/"
             "div[@title='Serving player']"
         )
         return co.find_first_xpath(entry_elem0, xpath_txt) is not None
 
     def fill_inmatch():
-        xpath_txt = "child::div[starts-with(@class, 'wrapper___')]"
+        xpath_txt = "child::div[starts-with(@class, 'detailScore__wrapper')]"
         inmatch_el = co.find_first_xpath(entry_elem, xpath_txt)
         if inmatch_el is not None:
             txt = inmatch_el.text_content().strip()
@@ -158,11 +159,11 @@ def parse_title_score(summary_href, fsdriver, verbose: bool = False) -> TitleSco
 
     def fill_details():
         status_el = co.find_first_xpath(
-            entry_elem, "child::div[starts-with(@class, 'status___')]"
+            entry_elem, "child::div[starts-with(@class, 'detailScore__status')]"
         )
         if status_el is not None:
             detstatus_el = co.find_first_xpath(
-                status_el, "child::span[starts-with(@class, 'detailStatus___')]"
+                status_el, "child::span[contains(@class, 'detailStatus')]"
             )
             if detstatus_el is not None:
                 text = detstatus_el.text
@@ -172,8 +173,9 @@ def parse_title_score(summary_href, fsdriver, verbose: bool = False) -> TitleSco
                     elif "Set " in text:
                         result.setnum = int(text.strip()[4])
 
+            # games tuple-2 score
             scr_el = co.find_first_xpath(
-                status_el, "child::span[starts-with(@class, 'detailScoreServe___')]"
+                status_el, "child::span[@class='detailScore__detailScoreServe']"
             )
             if scr_el is not None:
                 text = scr_el.text
@@ -182,30 +184,31 @@ def parse_title_score(summary_href, fsdriver, verbose: bool = False) -> TitleSco
                     result.inset = int(fst), int(snd)
 
     result = TitleScore()
-    root = build_root(summary_href, fsdriver, verbose=verbose)
+    root = build_root(summary_href, fsdriver, verbose=verbose, print_err=print_err)
     if root is None:
         if verbose:
-            print(f"root build failed, title score in {summary_href}")
+            print_err(f"root build failed, title score in {summary_href}")
         return result
     entry_elem0 = co.find_first_xpath(
-        root, "child::div[starts-with(@class, 'wrapper___')]"
+        root,
+        "descendant::div[@class='duelParticipant']"
     )
     if entry_elem0 is None:
         if verbose:
-            print(f"not found entry0 title score in {summary_href}")
+            print_err(f"not found entry0 title score in {summary_href}")
         return result
     if is_left_serve():
         result.is_left_srv = True
     elif is_right_serve():
         result.is_left_srv = False
     path = (
-        "child::div[starts-with(@class, 'score___')]/"
-        "div[starts-with(@class, 'matchInfo___')]"
+        "child::div[@class='duelParticipant__score']/"
+        "div[starts-with(@class, 'detailScore__matchInfo')]"
     )
     entry_elem = co.find_first_xpath(entry_elem0, path)
     if entry_elem is None:
         if verbose:
-            print(f"not found entry title score in {summary_href}")
+            print_err(f"not found entry title score in {summary_href}")
         return result
     fill_inmatch()
     fill_details()
@@ -270,13 +273,13 @@ def _make_next_key(det_score, setnum, cur_score):
     last_key = keys[-1]
     last_setnum = len(last_key)
     if last_setnum == setnum:
-        return last_key[0 : setnum - 1] + (cur_score,)
+        return last_key[0: setnum - 1] + (cur_score,)
     elif (last_setnum + 1) == setnum:
         if det_score[last_key].left_wingame:
             last_set_sc = (last_key[-1][0] + 1, last_key[-1][1])
         else:
             last_set_sc = (last_key[-1][0], last_key[-1][1] + 1)
-        return last_key[0 : last_setnum - 1] + (last_set_sc,) + (cur_score,)
+        return last_key[0: last_setnum - 1] + (last_set_sc,) + (cur_score,)
     else:
         raise co.TennisScoreError(
             "bad sets seq in _make_next_key {} {} in ".format(last_setnum, setnum)
@@ -302,7 +305,7 @@ def get_tie_info(match, is_decided_set):
     )
 
 
-def parse_match_detailed_score(match, fsdriver, verbose: bool = False):
+def parse_match_detailed_score(match, fsdriver, verbose: bool = False, print_err=print):
     """return True if ok, False if logged error. type(match) == LiveMatch"""
     if not match.href or match.score is None or match.score.retired:
         return
@@ -314,13 +317,13 @@ def parse_match_detailed_score(match, fsdriver, verbose: bool = False):
             det_set_el = build_root(
                 match.pointbypoint_href(setnum), fsdriver, verbose=verbose
             )
-            fsdriver.implicitly_wait(random.randint(4, 7))
+            fsdriver.implicitly_wait(random.randint(5, 7))
             entry_elem = co.find_first_xpath(
                 det_set_el, "descendant::div[contains(@class,'matchHistoryWrapper')]"
             )
             if entry_elem is None:
                 if verbose:
-                    print(f"not found matchHistoryWrapper in set={setnum} {match}")
+                    print_err(f"not found matchHistoryWrapper in set={setnum} {match}")
                 return False
 
             set_scr = match.score[setnum - 1]
@@ -361,7 +364,7 @@ def parse_match_detailed_score(match, fsdriver, verbose: bool = False):
                 at_xy = (n_usial_games // 2, n_usial_games // 2)
                 nkey = _make_next_key(det_score, setnum, (min(at_xy), min(at_xy)))
                 det_game = _parse_tie_scores(
-                    mhistos[n_usial_games + 1 :],
+                    mhistos[n_usial_games + 1:],
                     setnum,
                     (x_sup, y_sup),
                     tie_inf.is_super,
@@ -369,7 +372,7 @@ def parse_match_detailed_score(match, fsdriver, verbose: bool = False):
                 det_score[nkey] = copy.copy(det_game)
     except co.TennisScoreError as err:
         if verbose:
-            print("{} in {}".format(err, match))
+            print_err("{} in {}".format(err, match))
         return False
     if len(det_score) >= 12:
         match.detailed_score = det_score

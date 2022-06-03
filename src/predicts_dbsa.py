@@ -51,6 +51,7 @@ predicts_table = Table(
     Column("back_win_match", Integer),
     Column("bf_live_coef", Float),
     Column("bf_live_coef_matched", Float),
+    Column("clf_hash", String(50)),
     PrimaryKeyConstraint("sex", "date", "case_name", "rnd", "back_id", "oppo_id"),
 )
 
@@ -62,7 +63,7 @@ class PredictRec:
                  back_name: str, oppo_name: str,
                  book_start_chance: float, rejected: int = -1,
                  back_win_match: int = -1, bf_live_coef: float = None,
-                 bf_live_coef_matched: float = None
+                 bf_live_coef_matched: float = None, clf_hash: str = None
                  ):
         self.sex = sex
         self.date = date
@@ -83,6 +84,7 @@ class PredictRec:
         self.back_win_match = back_win_match
         self.bf_live_coef = bf_live_coef
         self.bf_live_coef_matched = bf_live_coef_matched
+        self.clf_hash = clf_hash
 
     def get_predict_result(self):
         return co.PredictResult(self.predict_result)
@@ -108,7 +110,7 @@ class PredictRec:
     def __repr__(self):
         return (
             f"{self.date} {self.sex} case {self.case_name} tour {self.tour_name}"
-            f" lev {self.level} surf {self.surface} rnd {self.rnd}"
+            f" lev {self.level} srf {self.surface} rnd {self.rnd}"
             f" back {self.back_id} oppo {self.oppo_id}"
             f" backn {self.back_name} oppon {self.oppo_name}"
             f" book_start {self.book_start_chance} back_win_m {self.back_win_match}"
@@ -139,6 +141,7 @@ mapper(
         "back_win_match": predicts_table.c.back_win_match,
         "bf_live_coef": predicts_table.c.bf_live_coef,
         "bf_live_coef_matched": predicts_table.c.bf_live_coef_matched,
+        "clf_hash": predicts_table.c.clf_hash,
     },
 )
 

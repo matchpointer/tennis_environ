@@ -5,9 +5,9 @@ import re
 import random
 import winsound
 
-import common as co
+from common import TennisError
 import file_utils as fu
-import log
+from loguru import logger as log
 
 WORK_DIR = "."
 CMD_ENVIRON = os.environ
@@ -23,6 +23,24 @@ DECORED_MEMBER_FUN_RE = re.compile(
 
 def quote_ifspace(text):
     return ('"' + text + '"') if " " in text else text
+
+
+class TennisCommandError(TennisError):
+    def __init__(self, cmd, comments=""):
+        super().__init__(cmd, comments)
+        self.cmd = cmd
+
+    def __str__(self):
+        result = ""
+        comments = TennisError.__str__(self)
+        if comments:
+            result += comments + " "
+        return result + str(self.cmd)
+
+
+class TennisDatabaseCommandError(TennisCommandError):
+    def __init__(self, cmd, comments=""):
+        super().__init__(cmd, comments)
 
 
 class Command:
@@ -144,12 +162,12 @@ class Command:
             self.returned_value = self.cmd(**self.args)
             return self.returned_value
         else:
-            raise co.TennisError("unsupported args type: %s" % type(self.args))
+            raise TennisError("unsupported args type: %s" % type(self.args))
 
     def fire_checked(self):
         self.fire()
         if not self.check_return_fun(self.returned_value):
-            raise co.TennisCommandError(self)
+            raise TennisCommandError(self)
         return self.returned_value
 
     def get_log_name(self):
@@ -331,7 +349,7 @@ class CommandSqlplus(Command):
                     text += " " + str(column)
                 text += "\n"
             return text
-        raise co.TennisDatabaseCommandError(
+        raise TennisDatabaseCommandError(
             self, "unexpected returned_value_as_string: " + str(self.returned_value)
         )
 
@@ -342,18 +360,18 @@ class CommandSqlplus(Command):
             Command.fire(self)
             time.sleep(0.6)
             if self.returned_value != 0:
-                raise co.TennisCommandError(self)
+                raise TennisCommandError(self)
             self.returned_value = None
 
             if not os.path.isfile(self.result_file):
-                raise co.TennisDatabaseCommandError(
+                raise TennisDatabaseCommandError(
                     self, "can not find result file " + self.result_file
                 )
             if fu.ora_error_in_file(self.result_file):
                 with open(self.result_file, "r") as fhandle:
                     self.returned_value = fhandle.read()
                 log.debug("sqlplus ora: \n" + self.returned_value)
-                raise co.TennisDatabaseCommandError(self, "ORA errors in result file")
+                raise TennisDatabaseCommandError(self, "ORA errors in result file")
 
             lines_max = 0
             if self.fetch == "all":
@@ -386,7 +404,7 @@ class CommandSqlplus(Command):
         self.fire()
         if self.fetch is not None:
             if not self.check_return_fun(self.returned_value):
-                raise co.TennisDatabaseCommandError(self, "invalid check")
+                raise TennisDatabaseCommandError(self, "invalid check")
         return self.returned_value
 
     @staticmethod

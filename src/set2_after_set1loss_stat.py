@@ -8,7 +8,7 @@ import datetime
 
 import tkinter.ttk
 
-import log
+from loguru import logger as log
 import cfg_dir
 import common as co
 import file_utils as fu
@@ -116,7 +116,7 @@ def player_winloss(sex, aspect, ident, max_size, min_date=None, max_date=None):
 
 
 def read_player_sized_value(sex, aspect, player_id):
-    cache_dct = read_player_sized_value.cached_from_sex[(sex, aspect)]
+    cache_dct = _cached_from_sex[(sex, aspect)]
     if cache_dct is not None:
         return cache_dct[player_id]
 
@@ -127,11 +127,11 @@ def read_player_sized_value(sex, aspect, player_id):
         keyfun=int,
         valuefun=rl.SizedValue.create_from_text,
     )
-    read_player_sized_value.cached_from_sex[(sex, aspect)] = dct
+    _cached_from_sex[(sex, aspect)] = dct
     return dct[player_id]
 
 
-read_player_sized_value.cached_from_sex = {
+_cached_from_sex = {
     ("wta", RECOVERY_ASPECT): None,
     ("wta", KEEP_ASPECT): None,
     ("atp", RECOVERY_ASPECT): None,
@@ -346,26 +346,21 @@ def players_filename(sex, aspect, suffix=""):
 
 
 def read_generic_value(sex, aspect):
-    if (sex, aspect) in read_generic_value.cache:
-        return read_generic_value.cache[(sex, aspect)]
+    if (sex, aspect) in _gen_cache:
+        return _gen_cache[(sex, aspect)]
     filename = generic_filename(sex, aspect)
     with open(filename, "r") as fh:
         line = fh.readline().strip()
         head, valtxt = line.split(" ")
         value = float(valtxt)
-        read_generic_value.cache[(sex, aspect)] = value
+        _gen_cache[(sex, aspect)] = value
         return value
 
 
-read_generic_value.cache = dict()
+_gen_cache = dict()
 
 
 def do_stat():
-    log.initialize(
-        co.logname(__file__, instance=str(args.sex)),
-        file_level="debug",
-        console_level="info",
-    )
     try:
         msg = "sex: {} min_size: {} max_size: {} max_rtg: {}  max_rtg_dif: {}".format(
             args.sex, args.min_size, args.max_size, args.max_rating, args.max_rating_dif
@@ -394,7 +389,7 @@ def do_stat():
         log.info(__file__ + " finished sex: {}".format(args.sex))
         return 0
     except Exception as err:
-        log.error("{0} [{1}]".format(err, err.__class__.__name__), exc_info=True)
+        log.exception("{0} [{1}]".format(err, err.__class__.__name__))
         return 1
 
 
@@ -497,4 +492,6 @@ def parse_command_line_args():
 if __name__ == "__main__":
     args = parse_command_line_args()
     if args.stat:
+        log.add(f'../log/set2_after_set1loss_stat_{args.sex}.log', level='INFO',
+                rotation='10:00', compression='zip')
         sys.exit(do_stat())

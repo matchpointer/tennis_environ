@@ -134,20 +134,18 @@ def get_penalty(sex, misspoints, scope_predicate, max_penalty=None):
     if max_penalty is not None:
         left_penalty = min(max_penalty, left_penalty)
         right_penalty = min(max_penalty, right_penalty)
-    return (left_penalty, right_penalty)
+    return left_penalty, right_penalty
 
 
 def __penalty_miss_dict(sex):
     """# вернем dict{(scope, is_srv) : penalty} для miss point"""
-    return (
-        __penalty_miss_dict.wta_dict if sex == "wta" else __penalty_miss_dict.atp_dict
-    )
+    return _wta_dict if sex == "wta" else _atp_dict
 
 
 GROW_COEF = 1.1
 
 #   (scope,    is_srv): penalty
-__penalty_miss_dict.wta_dict = {
+_wta_dict = {
     (co.GAME, True): 0.29328 * GROW_COEF,
     (co.GAME, False): 0.24 * GROW_COEF,
     (co.SET, True): 1.95552 * GROW_COEF,
@@ -157,7 +155,7 @@ __penalty_miss_dict.wta_dict = {
 }
 
 #   (scope,    is_srv): penalty
-__penalty_miss_dict.atp_dict = {
+_atp_dict = {
     (co.GAME, True): 0.37384 * GROW_COEF,
     (co.GAME, False): 0.24 * GROW_COEF,
     (co.SET, True): 2.492 * GROW_COEF,

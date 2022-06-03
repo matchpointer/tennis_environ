@@ -221,6 +221,11 @@ class Handle:
             if match_rec is not None:
                 return match_rec.score
 
+    def apply_filter(self, filter_fun):
+        """ remains only records which filter_fun(rec) is True """
+        if self.records:
+            self.records = list(filter(filter_fun, self.records))
+
 
 max_date_stmt = text("""SELECT MAX(date) FROM matches""")
 min_date_stmt = text("""SELECT MIN(date) FROM matches""")

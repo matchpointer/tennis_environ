@@ -3,12 +3,13 @@ import copy
 import random
 import functools
 from contextlib import closing
-from typing import Optional
+from typing import Optional, Dict
 
 import common as co
-import log
+from loguru import logger as log
 import dba
 import tennis_time as tt
+from surf import make_surf
 import score as sc
 import ratings
 import bet
@@ -19,6 +20,8 @@ import stat_cont as st
 
 @functools.total_ordering
 class Round:
+    __slots__ = ('value',)
+
     robin_names = [
         "Robin",
         "Rubber 1",
@@ -28,12 +31,14 @@ class Round:
         "Rubber 5",
         "N/A",
     ]
+
     names = (
         ["Pre-q", "q-First", "q-Second", "Qualifying", "First"]
         + robin_names
         + ["Second", "Third", "Fourth", "1/4", "1/2", "Final", "Bronze"]
     )
-    to_oncourt_id = {
+
+    to_oncourt_id: Dict[str, int] = {
         "Pre-q": 0,
         "q-First": 1,
         "q-Second": 2,
@@ -55,40 +60,24 @@ class Round:
         "N/A": 20,
     }
 
-    def __init__(self, value: str, details=None):
+    def __init__(self, value: str):
         self.value = co.to_ascii(value.strip())
-        self._detailing = details
         assert self.value in Round.names, "unexpected rnd value: {}".format(self.value)
 
-    @property
-    def detailing(self):
-        return self._detailing
-
-    @detailing.setter
-    def detailing(self, value):
-        self._detailing = value
-
     def __str__(self):
-        if not self.detailing:
-            return self.value
-        else:
-            return f"{self.value};{self.detailing}"
+        return self.value
 
     def __hash__(self):
         return hash(self.__str__())
 
     def __repr__(self):
-        return "{}('{}', {})".format(
-            self.__class__.__name__,
-            self.value,
-            "None" if not self.detailing else f"'{self.detailing}'",
-        )
+        return "{}('{}')".format(self.__class__.__name__, self.value)
 
     def __eq__(self, other):
         if isinstance(other, str):
-            return self.value == other  # and not self.detailing
+            return self.value == other
         elif isinstance(other, Round):
-            return self.value == other.value and self.detailing == other.detailing
+            return self.value == other.value
         return False
 
     def __ne__(self, other):
@@ -103,14 +92,7 @@ class Round:
             else Round.names.index(other.value)
         )
         idx_me = Round.names.index(self.value)
-        if idx_other == idx_me:
-            return (
-                False
-                if isinstance(other, str)
-                else str(self.detailing) < str(other.detailing)
-            )
-        else:
-            return idx_me < idx_other
+        return idx_me < idx_other
 
     def main_draw(self):
         return self.value not in ("Pre-q", "q-First", "q-Second", "Qualifying")
@@ -139,71 +121,12 @@ class Round:
             if ident == oncourt_id:
                 return Round(name)
 
-    def get_next(self, matches_encountered=None):
-        if self.value not in ("Final", "Bronze", "Rubber 5"):
-            if self.robin():
-                idx = Round.robin_names.index(self.value)
-                return Round(Round.robin_names[idx + 1], self.detailing)
-            else:
-                if self.value == "q-First":
-                    if matches_encountered is not None and matches_encountered <= 4:
-                        return Round("Qualifying")
-                    else:
-                        return Round("q-Second")
-                if self.value == "Qualifying":
-                    return Round("First", self.detailing)
-                if self.value == "Second":
-                    if matches_encountered is not None and matches_encountered <= 8:
-                        return Round("1/4", self.detailing)
-                    else:
-                        return Round("Third", self.detailing)
-                if self.value == Round("Third"):
-                    if matches_encountered is not None and matches_encountered <= 8:
-                        return Round("1/4", self.detailing)
-                    else:
-                        return Round("Fourth", self.detailing)
-                idx = Round.names.index(self.value)
-                return Round(Round.names[idx + 1], self.detailing)
-
-    def define_detailing(self, lhs_past_rounds, rhs_past_rounds):
-        if self.qualification() or self.pre_qualification():
-            return
-        lhs_qual = any([r.qualification() for r in lhs_past_rounds])
-        rhs_qual = any([r.qualification() for r in rhs_past_rounds])
-        if lhs_qual and rhs_qual:
-            self.detailing = "qual vs qual"
-            return
-        if self.value == "First" or self.robin():
-            if lhs_qual or rhs_qual:
-                self.detailing = "vs qual"
-            return  # need not analyze for bye
-        lhs_bye = "First" not in lhs_past_rounds and not any(
-            [r.robin() for r in lhs_past_rounds]
-        )
-        rhs_bye = "First" not in rhs_past_rounds and not any(
-            [r.robin() for r in rhs_past_rounds]
-        )
-        assert not (
-            lhs_qual and lhs_bye
-        ), "lhs_qual AND! lhs_bye. lhs_past_rounds: {}".format(lhs_past_rounds)
-        assert not (
-            rhs_qual and rhs_bye
-        ), "rhs_qual AND! rhs_bye. rhs_past_rounds: {}".format(rhs_past_rounds)
-        if lhs_bye and rhs_bye:
-            self.detailing = "bye vs bye"
-        elif (lhs_qual or rhs_qual) and (lhs_bye or rhs_bye):
-            self.detailing = "bye vs qual"
-        elif lhs_qual or rhs_qual:
-            self.detailing = "vs qual"
-        elif lhs_bye or rhs_bye:
-            self.detailing = "vs bye"
-
 
 def get_rnd_metric(rnd):
-    return get_rnd_metric.rnd_to_metric[rnd]
+    return _RND_TO_METRIC[rnd]
 
 
-get_rnd_metric.rnd_to_metric = {
+_RND_TO_METRIC = {
     "Pre-q": 0.0,
     "q-First": 0.2,
     "q-Second": 0.4,
@@ -377,7 +300,7 @@ class Match:
         try:
             score, dectieinfo = sc.get_decided_tiebreak_info_ext(tour, rnd, self.score)
             if not score.valid():
-                log.warn(
+                log.warning(
                     f"notchecked invalid score {score} {score.error} "
                     f"\n\t{tour.sex} {tour.date} {tour.name} "
                     f"{self.first_player} {self.second_player}"
@@ -388,7 +311,7 @@ class Match:
                 self.score = score
                 return True
         except co.TennisScoreSuperTieError as err:
-            log.warn(f"notchecked {err} {self.first_player} {self.second_player}")
+            log.warning(f"notchecked {err} {self.first_player} {self.second_player}")
             return False
 
     @property
@@ -624,7 +547,7 @@ class Match:
             if bet_coefs.ALL_BETTORS:
                 return self.fill_offer(sex, tour_id, tour_date, alter_bettor=True)
             else:
-                log.warn("bet_coefs.ALL_BETTORS=False with try2 in {}".format(self))
+                log.warning("bet_coefs.ALL_BETTORS=False with try2 in {}".format(self))
                 return False
 
     def same_players_by_ident(self, other_match):
@@ -711,143 +634,14 @@ class Match:
                 return co.RIGHT
 
 
-class Surface:
-    def __init__(self, name):
-        name_low = co.to_ascii(name.strip()).lower()
-        if ("carpet" in name_low and "outdoor" not in name_low) or (
-            "hard" in name_low and ("indoor" in name_low or name_low.startswith("i."))
-        ):
-            self.name = "Carpet"
-        elif "grass" in name_low:
-            self.name = "Grass"
-        elif "clay" in name_low:
-            self.name = "Clay"
-        elif "hard" in name_low or ("carpet" in name_low and "outdoor" in name_low):
-            self.name = "Hard"
-        elif "acrylic" in name_low:
-            self.name = "Acrylic"
-        else:
-            raise co.TennisSurfaceError("unexpected surface '{}'".format(name))
-
-    def __str__(self):
-        return self.name
-
-    def __repr__(self):
-        return "{}('{}')".format(self.__class__.__name__, self.name)
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other):
-        if isinstance(other, str):
-            return self.name == other
-        elif isinstance(other, Surface):
-            return self.name == other.name
-        return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-
-class Level:
-    names = ("main", "chal", "team", "teamworld", "junior", "future", "masters", "gs")
-
-    def __init__(self, name):
-        assert name in Level.names, "unexpected level: '{}'".format(name)
-        self.name = name
-
-    def __str__(self):
-        return self.name
-
-    def __repr__(self):
-        return "{}('{}')".format(self.__class__.__name__, self.name)
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other):
-        if isinstance(other, str):
-            return self.name == other
-        elif isinstance(other, Level):
-            return self.name == other.name
-        return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    @property
-    def gs(self):
-        return self.name == "gs"
-
-    @property
-    def masters(self):
-        return self.name == "masters"
-
-    @property
-    def main(self):
-        return self.name == "main"
-
-    @property
-    def chal(self):
-        return self.name == "chal"
-
-    @property
-    def junior(self):
-        return self.name == "junior"
-
-    @property
-    def future(self):
-        return self.name == "future"
-
-    @property
-    def team(self):
-        return self.name == "team"
-
-    @property
-    def teamworld(self):
-        return self.name == "teamworld"
-
-
-def soft_level(level, rnd, qualification=None):
-    """
-    усредненный уровень
-
-    >>> soft_level(level='masters', rnd=None, qualification=True)
-    'main'
-    >>> soft_level(level=Level('masters'), rnd=None, qualification=True)
-    'main'
-    >>> soft_level(level='masters', rnd=Round('q-First'), qualification=None)
-    'main'
-    >>> soft_level(level=Level('main'), rnd=Round('q-First'))
-    'qual'
-    >>> soft_level(level=Level('gs'), rnd=Round('q-First'))
-    'qual'
-    >>> soft_level(level='teamworld', rnd=None, qualification=True)
-    'qual'
-    >>> soft_level(level='team', rnd=None, qualification=True)
-    'qual'
-    >>> soft_level(level=Level('chal'), rnd=Round('q-First'))
-    'chal'
-    """
-    qual = qualification
-    if qual is None and rnd is not None:
-        qual = rnd.qualification() or rnd.pre_qualification()
-
-    if qual and level not in ("masters", "chal", "future"):
-        result = "qual"
-    elif level in ("masters", "gs", "teamworld"):
-        result = "main"
-    else:
-        result = str(level)
-    return result
-
-
 class HeadToHead:
     """method flip need not here: if match.flip() will be called,
     then self.fst_player, self.snd_player will be swaped as references,
     hence direct() will return fliped value"""
 
     TIME_DISCOUNT_FACTOR = 0.8
+
+    __slots__ = ('tour_match_aset', 'fst_player', 'snd_player', 'date')
 
     def __init__(self, sex, match, completed_only=False):
         self.tour_match_aset = []
@@ -975,7 +769,7 @@ class HeadToHead:
                     ident=tour_id,
                     name=tour_name,
                     sex=sex,
-                    surface=Surface(surf_name),
+                    surface=make_surf(surf_name),
                     rank=tour_rank,
                     date=tour_time.date() if tour_time else None,
                     money=money,

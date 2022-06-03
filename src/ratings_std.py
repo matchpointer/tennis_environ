@@ -1,5 +1,7 @@
 from collections import defaultdict
 from contextlib import closing
+from typing import Tuple, Optional, DefaultDict
+import datetime
 
 import common as co
 import dba
@@ -7,9 +9,23 @@ import dba
 """ access to oncourt ratings (since 2003.01.06)
 """
 
-# sex->
-#  OrderedDict{date(order by desc) -> defaultdict(player_id -> (rating_pos, rating_pts))}
-_sex_dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: (None, None))))
+SexDate_Pid_Rating = DefaultDict[
+    str,  # sex
+    DefaultDict[
+        datetime.date,  # order by desc
+        DefaultDict[
+            int,  # player_id
+            Tuple[
+                Optional[int],  # rating_pos
+                Optional[float]  # rating_pts
+            ]
+        ]
+    ]
+]
+
+_sex_dict: SexDate_Pid_Rating = defaultdict(
+    lambda: defaultdict(lambda: defaultdict(lambda: (None, None)))
+)
 
 
 def clear(sex):
@@ -23,16 +39,16 @@ def clear(sex):
                 del _sex_dict[sex]
 
 
-def initialize(sex=None, min_date=None):
+def initialize(sex=None, min_date=None, max_date=None):
     if sex in ("wta", None):
         if "wta" in _sex_dict:
             _sex_dict["wta"].clear()
-        __initialize_sex("wta", min_date=min_date)
+        __initialize_sex("wta", min_date=min_date, max_date=max_date)
 
     if sex in ("atp", None):
         if "atp" in _sex_dict:
             _sex_dict["atp"].clear()
-        __initialize_sex("atp", min_date=min_date)
+        __initialize_sex("atp", min_date=min_date, max_date=max_date)
 
 
 def initialized():
@@ -81,12 +97,12 @@ def __date_entry(sex, date):
     return None, None
 
 
-def __initialize_sex(sex, min_date=None):
+def __initialize_sex(sex, min_date=None, max_date=None):
     sql = """select DATE_R, ID_P_R, POS_R, POINT_R 
              from Ratings_{} """.format(
         sex
     )
-    dates_cond = dba.sql_dates_condition(min_date, max_date=None, dator="DATE_R")
+    dates_cond = dba.sql_dates_condition(min_date, max_date=max_date, dator="DATE_R")
     if dates_cond:
         sql += """
                where 1 = 1 {} """.format(

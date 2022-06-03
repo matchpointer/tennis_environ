@@ -5,7 +5,7 @@ import datetime
 from typing import Optional, Dict
 
 import config_file as cf
-import log
+from loguru import logger as log
 import score as sc
 import tennis_time as tt
 from tour_name import TourName
@@ -17,7 +17,7 @@ class TourInfo:
         sex=None,
         tour_name=None,
         surface=None,
-        level=None,
+        level='',
         qualification=False,
         doubles=None,
         teams=None,
@@ -71,7 +71,7 @@ class TourInfo:
                 if not self.qualification:
                     result = True
                 else:
-                    result = "Wimbledon" in self.tour_name  # at Wim qualify is bo5
+                    result = "wimbledon" in self.tour_name  # at Wim qualify is bo5
             else:
                 result = self.teams and not self.doubles
         return result
@@ -116,11 +116,17 @@ class TourInfo:
 
 
 class TourInfoCache:
-    def __init__(self, skip_exc_cls):
+    def __init__(self, skip_exc_cls, skip_keys=None):
+        """ для ускорения сканирования событий в skip_keys
+            можно заранее передать странные ключи, чтобы на ранней
+            стадии пропускались, не доходя до специфических исключений """
         self.skip_exc_cls = skip_exc_cls
         # does marking as skip (if encountered skip item -> raise self.skip_exc_cls()):
         self.skip_obj = TourInfo()
         self.cache: Dict[str, TourInfo] = dict()
+        if skip_keys:
+            for sk_key in skip_keys:
+                self.cache[sk_key] = self.skip_obj
 
     def get(self, key: str) -> TourInfo:
         obj = self.cache.get(key)

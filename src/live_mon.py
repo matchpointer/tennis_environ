@@ -1,12 +1,12 @@
 r"""
-module gives Application with upper level logic
+module gives Application with upper level logic.
 """
 import os
+import sys
 import copy
 from collections import defaultdict
 import time
 import datetime
-import random
 import argparse
 import winsound
 
@@ -16,14 +16,12 @@ import tkinter.ttk
 from selenium.common.exceptions import TimeoutException
 from requests.exceptions import RequestException
 
-import clf_decided_00_apply
+import clf_decided_00dog_apply
 import stopwatch
 
-import common as co
-import log
+from loguru import logger as log
 import cfg_dir
 import config_personal
-from side import Side
 import ratings
 import tennis_time as tt
 import bet_coefs
@@ -31,33 +29,26 @@ import dba
 import sms_svc
 import oncourt_players
 import common_wdriver
+from score_company import get_company, ScoreCompany
 import matchstat
 
+from clf_common import load_variants
 import decided_set
 import weeked_tours
 from live import (
-    get_events,
     LiveTourEvent,
     LiveMatch,
     skip_levels_work,
-    initialize as live_initialize,
-    initialize_players_cache,
 )
 from tournament_misc import log_events, events_tostring
 import betfair_client
+from betfair_bet import winmatch_market, winset2_market, winset1_market
 
-# import decided_win_by_two_sets_stat
 from live_alerts import (
     AlertMessage,
-    AlertSetDecidedWinClf,
-    AlertScEqualTieRatio,
-    AlertSc35Srv,
+    AlertSetDecidedWinDispatchClf,
 )
 import predicts_db
-from report_line import make_get_adv_side
-
-
-_DEFAULT_MARKET_NAME = "MATCH_ODDS"
 
 
 class EventsFile:
@@ -91,28 +82,28 @@ root = tkinter.Tk()
 
 
 class Application(tkinter.Frame):
-    def __init__(self, company_name, quick_timeout, slow_timeout):
+    def __init__(self, company: ScoreCompany, quick_timeout, slow_timeout):
         tkinter.Frame.__init__(self, None)
         self.grid()
-        self.company_name = company_name
+        self.company = company
         self.quick_timeout = quick_timeout
         self.slow_timeout = slow_timeout
         self.timer = stopwatch.OverTimer(quick_timeout)
         self.events = []
-        self.events_file = EventsFile(
-            os.path.join(cfg_dir.log_dir(), "live_events.txt")
-        )
+        self.events_file = None
+        if args.eventsfile:
+            self.events_file = EventsFile(
+                os.path.join(cfg_dir.log_dir(), "live_events.txt"))
         self.REMOVING_EVENT_SECS = 780  # delay before real remove of event
         self.REMOVING_MATCH_SECS = 750  # delay before real remove of match
         self.updating = False
         self.alerts_from_sex = defaultdict(list)
         self.make_alerts()
-        self.drv = common_wdriver.wdriver(company_name, headless=True, faked=False)
+        self.drv = common_wdriver.wdriver(company, headless=True)
         self.drv.start()
         self.drv.go_live_page()
-        initialize_players_cache(self.drv.page())
-        self.wake_timer = None  # stopwatch.PointTimer(datetime.datetime(
-        # year=2018, month=2, day=11, hour=8, minute=0))
+        company.initialize_players_cache(self.drv.page())
+        self.wake_timer = None  # or stopwatch.PointTimer(datetime)
         self.sms_start_timer = stopwatch.PointTimer(
             datetime.datetime(year=2021, month=7, day=27, hour=8, minute=20)
         )
@@ -160,22 +151,34 @@ class Application(tkinter.Frame):
             variable=self.betfairmode_var,
             offvalue=0,
             onvalue=1,
-            command=self.betfair_change,
+            command=self.change_betfair_mode,
         )
         self.betfairmode_cbtn.grid(row=row, column=2)
         if args.betfair:
             self.betfairmode_cbtn.select()
         row += 1
 
-        self.slow_allow_mode_var = tkinter.IntVar()
-        self.slow_allow_mode_cbtn = tkinter.Checkbutton(
+        self.allow_slow_mode_var = tkinter.IntVar()
+        self.allow_slow_mode_cbtn = tkinter.Checkbutton(
             self,
             text="slow_allow_mode",
-            variable=self.slow_allow_mode_var,
+            variable=self.allow_slow_mode_var,
             offvalue=0,
             onvalue=1,
         )
-        self.slow_allow_mode_cbtn.grid(row=row, column=2)
+        self.allow_slow_mode_cbtn.grid(row=row, column=2)
+        row += 1
+
+        self.ext_market_var = tkinter.IntVar()
+        self.ext_market_cbtn = tkinter.Checkbutton(
+            self,
+            text="ext_market",
+            variable=self.ext_market_var,
+            offvalue=0,
+            onvalue=1,
+        )
+        self.ext_market_cbtn.grid(row=row, column=2)
+        self.ext_market_cbtn.select()
         row += 1
 
         self.message_lbl = tkinter.ttk.Label(self, text="Silence...", font="sans 12")
@@ -183,87 +186,40 @@ class Application(tkinter.Frame):
         self.message_lbl.after_idle(self.check_time)
         row += 1
 
-    def sleep_mode(self):
+    def is_sleep_mode(self):
         return bool(self.sleepmode_var.get())
 
-    def sms_mode(self):
+    def is_sms_mode(self):
         return bool(self.smsmode_var.get())
 
-    def betfair_mode(self):
+    def is_betfair_mode(self):
         return bool(self.betfairmode_var.get())
 
-    def betfair_change(self):
-        if self.betfair_mode():  # enabling
+    def change_betfair_mode(self):
+        if self.is_betfair_mode():  # enabling
             if not betfair_client.is_initialized():
                 betfair_client.initialize()
         else:  # disabling
             if betfair_client.is_initialized():
                 betfair_client.de_initialize()
 
-    def slow_allow_mode(self):
-        return bool(self.slow_allow_mode_var.get())
+    def is_allow_slow_mode(self):
+        return bool(self.allow_slow_mode_var.get())
+
+    def is_ext_market(self):
+        return bool(self.ext_market_var.get())
 
     def make_alerts(self):
-        clf_decided_00_apply.load_variants()
+        load_variants(clf_decided_00dog_apply.apply_variants)
+
         sex = "wta"
 
-        self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
-            back_opener=None))
-
-        self.alerts_from_sex[sex].append(
-            AlertScEqualTieRatio(
-                "decided",
-                max_surf_rank_dif=65,
-                adv_side_funs=(
-                    make_get_adv_side(min_adv_size=10, min_adv_value=0.57,
-                                      min_oppo_size=10, max_oppo_value=0.52),
-                    make_get_adv_side(min_adv_size=12, min_adv_value=0.65,
-                                      min_oppo_size=2, max_oppo_value=0.4),
-                    make_get_adv_side(min_adv_size=6, min_adv_value=0.71,
-                                      min_oppo_size=12, max_oppo_value=0.36),
-                ),
-            )
-        )
-
-        self.alerts_from_sex[sex].append(
-            AlertSc35Srv(
-                setname='decided',
-                srv_side=Side('LEFT'),
-                max_lay_ratio=0.55,
-                min_size=10,
-                max_oppo_rank_adv_dif=80,
-            )
-        )
-        self.alerts_from_sex[sex].append(
-            AlertSc35Srv(
-                setname='decided',
-                srv_side=Side('RIGHT'),
-                max_lay_ratio=0.55,
-                min_size=10,
-                max_oppo_rank_adv_dif=80,
-            )
-        )
+        self.alerts_from_sex[sex].append(AlertSetDecidedWinDispatchClf())
 
         # -------------------------- atp -----------------------------
         sex = "atp"
 
-        self.alerts_from_sex[sex].append(AlertSetDecidedWinClf(
-            back_opener=None))
-
-        self.alerts_from_sex[sex].append(
-            AlertScEqualTieRatio(
-                "decided",
-                max_surf_rank_dif=65,
-                adv_side_funs=(
-                    make_get_adv_side(min_adv_size=12, min_adv_value=0.575,
-                                      min_oppo_size=12, max_oppo_value=0.52),
-                    make_get_adv_side(min_adv_size=14, min_adv_value=0.66,
-                                      min_oppo_size=3, max_oppo_value=0.4),
-                    make_get_adv_side(min_adv_size=8, min_adv_value=0.8,
-                                      min_oppo_size=12, max_oppo_value=0.36),
-                ),
-            )
-        )
+        self.alerts_from_sex[sex].append(AlertSetDecidedWinDispatchClf())
 
     def is_slow_mode(self):
         return int(self.timer.threshold) == self.slow_timeout
@@ -276,13 +232,6 @@ class Application(tkinter.Frame):
 
     def log_events(self, head="", extended=True, flush=False):
         log_events(self.events, head=head, extended=extended, flush=flush)
-
-    def wait_random(self):
-        if self.company_name == "BC":
-            random_sec_max = int(self.timer.threshold * 0.1)
-            if random_sec_max >= 1:
-                random_sec = random.randrange(0, random_sec_max)
-                time.sleep(random_sec)
 
     def dispatch(self):
         is_attention = False
@@ -310,26 +259,22 @@ class Application(tkinter.Frame):
         for try_num in range(1, 4):
             try:
                 self.drv.live_page_refresh()
-                fresh_events = get_events(
-                    self.drv.page(),
-                    skip_levels=skip_levels_work(),
-                    company_name=self.company_name)
+                fresh_events = self.company.fetch_events(
+                    webpage=self.drv.page(),
+                    skip_levels=skip_levels_work())
                 break
             except (
                 RequestException, UnicodeEncodeError, TimeoutException, ValueError
             ) as err:
                 # may be inet problems
-                log.error(
-                    "drv.page_source {}\nfail try_num: {}".format(err, try_num),
-                    exc_info=True,
-                )
+                log.exception(
+                    "drv.page_source {}\nfail try_num: {}".format(err, try_num))
                 time.sleep(20)
                 try:
                     self.drv.current_page_refresh()
                 except (RequestException, TimeoutException) as err2:
-                    log.error(
-                        "drv.get {}\nfail try_num: {}".format(err2, try_num),
-                        exc_info=True,
+                    log.exception(
+                        "drv.get {}\nfail try_num: {}".format(err2, try_num)
                     )
                     time.sleep(20)
         return fresh_events
@@ -345,7 +290,7 @@ class Application(tkinter.Frame):
 
         for event in self.events:
             event.define_features()
-            event.define_players(self.company_name)
+            event.define_players()
             event.define_level()
             event.set_matches_key()
             if event.need_fill_matches_details():
@@ -353,7 +298,8 @@ class Application(tkinter.Frame):
             for match in event.matches:
                 match.log_check_unknown()
 
-        self.events_file.periodic_write(self.events)
+        if self.events_file is not None:
+            self.events_file.periodic_write(self.events)
         self.updating = False
 
     def remove_completed(self, fresh_events):
@@ -422,9 +368,8 @@ class Application(tkinter.Frame):
 
     def check_time(self):
         if self.timer.overtime():
-            self.wait_random()
             is_attention, alert_messages = False, []
-            if not self.sleep_mode():
+            if not self.is_sleep_mode():
                 self.update_events()
                 is_attention, alert_messages = self.dispatch()
             elif self.wake_timer and self.wake_timer.overtime():
@@ -439,7 +384,7 @@ class Application(tkinter.Frame):
             if is_attention and self.is_slow_mode():
                 log.info("switch to quick mode (exist alert)")
                 self.timer.set_threshold(self.quick_timeout)
-            elif not is_attention and self.is_quick_mode() and self.slow_allow_mode():
+            elif not is_attention and self.is_quick_mode() and self.is_allow_slow_mode():
                 log.info("switch to slow mode (no attention)")
                 self.timer.set_threshold(self.slow_timeout)
             self.timer.restart()
@@ -455,11 +400,17 @@ class Application(tkinter.Frame):
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         Application.bring_to_front()
-        if self.betfair_mode():
+        if self.is_betfair_mode():
             self.out_betfair_messages(alert_messages)
-        if self.sms_mode():
+            detail = '[B]'
+        else:
+            detail = '[b]'
+        if self.is_sms_mode():
             self.out_sms_messages(alert_messages)
-        log.info("alerted: " + text)
+            detail += '[S]'
+        else:
+            detail += '[s]'
+        log.info(f"alerted: {detail} {text}")
 
     def out_sms_messages(self, alert_messages):
         if not self.sms_start_timer or self.sms_start_timer.overtime():
@@ -468,24 +419,27 @@ class Application(tkinter.Frame):
                     [
                         a
                         for a in alert_messages
-                        if (a.case_name.startswith("decided_66")
-                            or a.case_name.startswith("decided_35srv"))
+                        if self.out_betfair_permit(a)
                     ]
                 )
             except sms_svc.SMSError as err:
                 log.error("{}".format(err))
 
     @staticmethod
-    def out_betfair_messages(alert_messages):
+    def out_betfair_permit(msg: AlertMessage) -> bool:
+        return (
+            (msg.case_name.startswith("decided_00") and 'backdog' in msg.comment)
+            or (msg.case_name.startswith("decided_00nodog"))
+            or msg.case_name.startswith("decided_66")
+            or msg.case_name.startswith("open_66")
+        )
+
+    def out_betfair_messages(self, alert_messages):
         for msg in alert_messages:
-            if (
-                msg.case_name in (
-                    "decided_00", "secondset_00", "decided_66", "decided_35srv"
-                )
-            ):
+            if self.out_betfair_permit(msg):
                 summary_href = msg.summary_href if msg.summary_href else ""
                 betfair_client.send_message(
-                    _DEFAULT_MARKET_NAME,
+                    self.get_market(case_name=msg.case_name, sex=msg.sex),
                     msg.sex,
                     msg.case_name,
                     msg.fst_name,
@@ -499,7 +453,16 @@ class Application(tkinter.Frame):
                     msg.fst_id,
                     msg.snd_id,
                     msg.comment,
+                    msg.level,
                 )
+
+    def get_market(self, case_name: str, sex: str):
+        if self.is_ext_market():
+            if case_name.startswith('secondset'):
+                return winset2_market
+            elif case_name.startswith('open'):
+                return winset1_market
+        return winmatch_market
 
     def show_silence(self):
         self.message_lbl["text"] = "Silence..."
@@ -514,7 +477,8 @@ def parse_command_line_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sms", action="store_true")
     parser.add_argument("--betfair", action="store_true")
-    parser.add_argument("--company_name", choices=["BC", "FS"], default="FS")
+    parser.add_argument("--eventsfile", action="store_true")
+    parser.add_argument("--company_name", choices=["T24", "FS"], default="T24")
     return parser.parse_args()
 
 
@@ -570,22 +534,24 @@ def main():
         rnd_detailing=True,
     )
     weeked_tours.use_tail_tours_cache = True
-    live_initialize()
-    app = Application(
-        company_name=args.company_name, quick_timeout=2.2, slow_timeout=132
-    )
+    company = get_company(args.company_name)
+    company.initialize()
+    app = Application(company=company, quick_timeout=2.7, slow_timeout=132)
     app.master.title("Live monitor")
     predicts_db.initialize()
     app.mainloop()
     log.info("Live monitor exiting")
     app.drv.stop()
     app.drv = None
-    app.events_file.close()
+    if app.events_file is not None:
+        app.events_file.close()
     predicts_db.finalize()
     dba.close_connect()
 
 
 if __name__ == "__main__":
+    log.remove()
+    log.add(sys.stderr, level='INFO')
+    log.add('../log/live_mon.log', level='INFO', rotation='10:00', compression='zip')
     args = parse_command_line_args()
-    log.initialize(co.logname(__file__), file_level="info", console_level="info")
     main()

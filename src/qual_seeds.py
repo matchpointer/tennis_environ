@@ -1,11 +1,12 @@
 import collections
 from contextlib import closing
+from typing import List, Dict
 
-import common as co
 import dba
 
-__wta_quals_from_tid = collections.defaultdict(list)
-__atp_quals_from_tid = collections.defaultdict(list)
+# {tour_id -> List[player_id]}
+__wta_quals_from_tid: Dict[int, List[int]] = collections.defaultdict(list)
+__atp_quals_from_tid: Dict[int, List[int]] = collections.defaultdict(list)
 
 
 def initialize():
@@ -36,11 +37,10 @@ def _initialize_sex(sex):
 
 
 if __name__ == "__main__":
-    import log
+    from loguru import logger as log
 
-    log.initialize(
-        co.logname(__file__, test=True), file_level="debug", console_level="info"
-    )
+    log.add('../log/qual_seeds.log', level='INFO',
+            rotation='10:00', compression='zip')
     dba.open_connect()
 
     initialize()

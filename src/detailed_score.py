@@ -1083,6 +1083,7 @@ class SetItems:
             return co.LEFT
         elif self.fin_scr[0] < self.fin_scr[1]:
             return co.RIGHT
+        return None
 
     def set_opener_side(self):
         if self.items:
@@ -1185,6 +1186,7 @@ class SetItems:
 
     @staticmethod
     def is_admit_error(error):
-        return not error_contains(error, "GAME_SCORE_SIMULATED") and not error_contains(
-            error, "SERVER_CHAIN"
+        return (
+            not error_contains(error, "GAME_SCORE_SIMULATED")
+            and not error_contains(error, "SERVER_CHAIN")
         )

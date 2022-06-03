@@ -59,7 +59,7 @@ class Rating(dict):
 
     @staticmethod
     def _make_key(rtg_name, surface="all"):
-        return rtg_name + "_" + str(surface)
+        return f"{rtg_name}_{surface}"
 
     def __init__(self, items=None):
         super(Rating, self).__init__(items if items else [])
@@ -114,7 +114,7 @@ def initialize(sex, rtg_names, min_date=None):
             if rtg_name == "elo":
                 ratings_elo.initialize(sex)
             elif rtg_name == "std":
-                ratings_std.initialize(sex, min_date)
+                ratings_std.initialize(sex=sex, min_date=min_date)
 
 
 def clear(sex, rtg_names):

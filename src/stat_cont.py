@@ -1,10 +1,17 @@
 from collections import defaultdict, namedtuple
+from operator import itemgetter
 import operator
 import re
 import functools
+import unittest
+from typing import Optional, List
+
+from recordclass import recordclass
 
 import common as co
-import log
+from loguru import logger as log
+from side import Side
+import report_line as rl
 import score as sc
 
 
@@ -55,9 +62,9 @@ class Sumator(object):
         self.sum = init_sum
         self.count = init_count
 
-    @staticmethod
-    def from_seq(iterable):
-        result = Sumator()
+    @classmethod
+    def from_seq(cls, iterable):
+        result = cls()
         for val in iterable:
             result.hit(val)
         return result
@@ -137,38 +144,38 @@ class WinLoss(object):
         self.win_count = win_count
         self.loss_count = loss_count
 
-    def add_win(self, count: int):
-        self.win_count += count
-
-    def add_loss(self, count: int):
-        self.loss_count += count
-
-    @staticmethod
-    def create_from_ratio(win_ratio, size):
+    @classmethod
+    def from_ratio(cls, win_ratio, size):
         win_count = int(round(float(size) * win_ratio))
         loss_count = size - win_count
-        return WinLoss(win_count, loss_count)
+        return cls(win_count, loss_count)
 
-    @staticmethod
-    def create_from_text(text):
-        match = WinLoss.text_re.match(text)
+    @classmethod
+    def from_text(cls, text):
+        match = cls.text_re.match(text)
         if match:
             multiplier = 0.01 if match.group("percent_sign") else 1.0
             win_ratio = float(match.group("value")) * multiplier
             size = int(match.group("size"))
-            return WinLoss.create_from_ratio(win_ratio, size)
+            return cls.from_ratio(win_ratio, size)
         raise co.TennisError("unparsed WinLoss text: '{}'".format(text))
 
-    @staticmethod
-    def create_from_iter(iterable):
-        """make object from iter of booleans"""
+    @classmethod
+    def from_iter(cls, iterable):
+        """make object from iter of booleans-like"""
         win_count, loss_count = 0, 0
         for val in iterable:
             if val:
                 win_count += 1
             else:
                 loss_count += 1
-        return WinLoss(win_count, loss_count)
+        return cls(win_count, loss_count)
+
+    def add_win(self, count: int):
+        self.win_count += count
+
+    def add_loss(self, count: int):
+        self.loss_count += count
 
     def __bool__(self):
         return self.size > 0
@@ -288,6 +295,23 @@ class WinLoss(object):
         return WinLoss(win_count=self.loss_count, loss_count=self.win_count)
 
 
+class WinLossTest(unittest.TestCase):
+    def test_compare(self):
+        wl1 = WinLoss.from_text("41.2% (17)")
+        wl2 = WinLoss.from_text("37.8% (339)")
+        self.assertTrue(wl1 > wl2)
+        self.assertTrue(wl2 < wl1)
+        self.assertEqual([wl2, wl1], sorted([wl1, wl2]))
+
+    def test_sum(self):
+        wl1 = WinLoss(7, 3)
+        wl2 = WinLoss(6, 4)
+        wl3 = WinLoss(0, 0)
+        dct = {1: wl1, 2: wl2, 3: wl3}
+        s = sum((dct[i] for i in range(1, 4)), WinLoss())
+        self.assertEqual(wl1 + wl2 + wl3, s)
+
+
 class WinLossPairValue(object):
     """РґР»СЏ РЅР°РєРѕРїР»РµРЅРёСЏ Р·РЅР°С‡РµРЅРёР№ (value) СЃ СЂР°Р·Р±РёРІРєРѕР№ РЅР° РґРІР° РІР°СЂРёР°РЅС‚Р°:
     РІС‹РёРіСЂС‹С€ РёР»Рё РїСЂРѕРёРіСЂС‹С€.
@@ -361,6 +385,39 @@ def create_winloss_pair_value_histogram():
     return Histogram(WinLossPairValue)
 
 
+class SetsScoreHistogramTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.histos = [
+            Histogram(int, {(2, 0): 5, (2, 1): 3, (1, 2): 1, (0, 2): 2}),
+            Histogram(int, {(2, 0): 6, (2, 1): 4, (1, 2): 2, (0, 2): 3}),
+        ]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.histos = []
+
+    def test_init_and_sum(self):
+        self.assertEqual(self.histos[0][(2, 0)], 5)
+        self.assertEqual(self.histos[0][(2, 1)], 3)
+        self.assertEqual(self.histos[0][(1, 2)], 1)
+        self.assertEqual(self.histos[0][(0, 2)], 2)
+
+        self.assertEqual(self.histos[1][(2, 0)], 6)
+        self.assertEqual(self.histos[1][(2, 1)], 4)
+        self.assertEqual(self.histos[1][(1, 2)], 2)
+        self.assertEqual(self.histos[1][(0, 2)], 3)
+
+        start_histo = Histogram()
+        sc.complete_sets_score_keys(start_histo)
+        histo = sum(self.histos, start_histo)
+        self.assertEqual(type(histo), Histogram)
+        self.assertEqual(histo[(2, 0)], 11)
+        self.assertEqual(histo[(2, 1)], 7)
+        self.assertEqual(histo[(1, 2)], 3)
+        self.assertEqual(histo[(0, 2)], 5)
+
+
 class QuadServiceStatError(co.TennisError):
     pass
 
@@ -373,38 +430,53 @@ ThresholdedResult = namedtuple("ThresholdedResult", "side quadrant ratio")
 
 
 class BreakupTrack:
-    __slots__ = ("is_fst_breakup", "is_snd_breakup")
+    __slots__ = ("is_fst_breakups",)
 
     def __init__(self):
-        self.is_fst_breakup = None
-        self.is_snd_breakup = None
+        self.is_fst_breakups: List[bool] = []
+
+    def is_any_breakup(self):
+        return bool(self.is_fst_breakups)
+
+    def is_fst_breakup(self):
+        return any(self.is_fst_breakups)
+
+    def is_snd_breakup(self):
+        return not all(self.is_fst_breakups)
 
     def put(self, scr, left_service: bool, left_win_game: bool):
-        if self.is_fst_breakup and self.is_snd_breakup:
-            return
+        """ input: last live score about finished game """
         if left_service is left_win_game:
             return  # hold
         x, y = scr
         if x <= y and left_service:
-            self.is_snd_breakup = True
+            self.is_fst_breakups.append(False)
         elif y <= x and left_service is False:
-            self.is_fst_breakup = True
+            self.is_fst_breakups.append(True)
 
 
 class BreakupTracker:
-    MAX_SETNUM = 2  # for time & memory economy
+    MAX_SETNUM = 3  # for time & memory economy
 
     def __init__(self):
         # setnum -> BreakupTrack
         self.track_from_setnum = defaultdict(BreakupTrack)
 
+    def is_fst_breakup_list(self, setnum: int) -> Optional[List[int]]:
+        if setnum is not None:
+            return self.track_from_setnum[setnum].is_fst_breakups
+
     def is_fst_breakup(self, setnum):
         if setnum is not None:
-            return self.track_from_setnum[setnum].is_fst_breakup
+            return self.track_from_setnum[setnum].is_fst_breakup()
 
     def is_snd_breakup(self, setnum):
         if setnum is not None:
-            return self.track_from_setnum[setnum].is_snd_breakup
+            return self.track_from_setnum[setnum].is_snd_breakup()
+
+    def is_any_breakup(self, setnum):
+        if setnum is not None:
+            return self.track_from_setnum[setnum].is_any_breakup()
 
     def close_previous(
         self, prev_score, prev_left_service: bool, prev_left_wingame: bool
@@ -445,6 +517,31 @@ class HoldStat(object):
                 fst_snd[0].hit(prev_left_wingame)
             else:
                 fst_snd[1].hit(not prev_left_wingame)
+
+
+class HoldStatTest(unittest.TestCase):
+    def test_close_previous(self):
+        stat1 = HoldStat()
+        stat1.close_previous(
+            sc.Score("1-1"), prev_left_service=True, prev_left_wingame=True
+        )  # 1/1, 0/0
+        stat1.close_previous(
+            sc.Score("2-1"), prev_left_service=False, prev_left_wingame=False
+        )  # 1/1, 1/1
+        stat1.close_previous(
+            sc.Score("2-2"), prev_left_service=True, prev_left_wingame=False
+        )  # 1/2, 1/1
+        stat1.close_previous(
+            sc.Score("2-3"), prev_left_service=False, prev_left_wingame=False
+        )  # 1/2, 2/2
+        stat1.close_previous(
+            sc.Score("2-4"), prev_left_service=True, prev_left_wingame=True
+        )  # 2/3, 2/2
+        stat1.close_previous(
+            sc.Score("6-6"), prev_left_service=True, prev_left_wingame=False
+        )  # skip tie
+        res_pair = stat1.result_pair(setnum=1, as_float=False)
+        self.assertEqual(res_pair, (WinLoss(2, 1), WinLoss(2, 0)))
 
 
 class MissBigPointStat(object):
@@ -615,7 +712,7 @@ class MissBigPointStat(object):
         return max_where_1 == max_where_2
 
 
-class AllowBreakPointStat(object):
+class AllowBreakPointStat:
     def __init__(self):
         self.bpcount_from_setnum = defaultdict(lambda: (0, 0))
 
@@ -687,6 +784,18 @@ class AllowBreakPointStat(object):
         return sc.num_ingame_breakpoint_count(num_ingame, left_service)
 
 
+class AllowBreakPointStatTest(unittest.TestCase):
+    def test_continue_bp(self):
+        stat1 = AllowBreakPointStat()
+
+        prev_score = sc.Score("5-2")
+        prev_left_service = False
+        prev_ingame = ("30", "30")
+        ingame = ("40", "30")
+        stat1.continue_current(prev_score, prev_ingame, prev_left_service, ingame)
+        self.assertEqual((0, 1), stat1.get_counts())
+
+
 class MatchLastInrow(object):
     def __init__(self):
         # here setnum -> LastInrowCount
@@ -739,6 +848,36 @@ class SetOpenerMatchTracker:
             return opener_side == co.LEFT
 
 
+class TestSetOpener(unittest.TestCase):
+    def test_match_track(self):
+        trk = SetOpenerMatchTracker()
+        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
+        self.assertEqual(r, None)
+        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
+        self.assertEqual(r, None)
+        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
+        self.assertEqual(r, True)
+        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
+        self.assertEqual(r, True)
+        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
+        self.assertEqual(r, True)
+
+        r = trk.put(setnum=2, scr=(0, 0), is_left_service=False)
+        self.assertEqual(r, None)
+
+        r = trk.get_opener_side(setnum=1, scr=(5, 3), at=True)
+        self.assertEqual(r, co.LEFT)
+
+        r = trk.get_opener_side(setnum=1, scr=(5, 3), at=False)
+        self.assertEqual(r, co.RIGHT)
+
+        r = trk.get_opener_side(setnum=1, scr=(5, 4), at=True)
+        self.assertEqual(r, co.RIGHT)
+
+        r = trk.get_opener_side(setnum=1, scr=(0, 0), at=True)
+        self.assertEqual(r, co.LEFT)
+
+
 class SetOpenerHitCounter:
     """target is work around noised live data about who is serve at current score"""
 
@@ -778,6 +917,58 @@ class SetOpenerHitCounter:
                     return co.RIGHT
 
 
+EdgeScr = recordclass("EdgeScr", ("x", "y", "left_serve"))
+
+
+class EdgeScrTrack:
+    __slots__ = ('scores',)
+
+    def __init__(self):
+        self.scores = []
+
+    def put(self, x: int, y: int, left_serve: bool):
+        if (x != 5 and y != 5) or x == y:
+            return
+        edge_scr = EdgeScr(x=x, y=y, left_serve=left_serve)
+        if edge_scr not in self.scores:
+            self.scores.append(edge_scr)
+
+    def serveonset_count(self, side: Side):
+        result = 0
+        for edsc in self.scores:
+            if (
+                (edsc.x == 5 and edsc.y < 5 and edsc.left_serve and side.is_left())
+                or
+                (edsc.x < 5 and edsc.y == 5 and not edsc.left_serve and side.is_right())
+                or
+                (edsc.x == 6 and edsc.y == 5 and edsc.left_serve and side.is_left())
+                or
+                (edsc.x == 5 and edsc.y == 6 and not edsc.left_serve and side.is_right())
+            ):
+                result += 1
+        return result
+
+
+class EdgeScores:
+    __slots__ = ('track_sn1', 'track_sn2')
+
+    def __init__(self):
+        self.track_sn1 = EdgeScrTrack()
+        self.track_sn2 = EdgeScrTrack()
+
+    def put(self, setnum: int, x: int, y: int, left_serve: bool):
+        if setnum == 1:
+            self.track_sn1.put(x, y, left_serve)
+        elif setnum == 2:
+            self.track_sn2.put(x, y, left_serve)
+
+    def serveonset_count(self, setnum: int, side: Side):
+        if setnum == 1:
+            return self.track_sn1.serveonset_count(side)
+        elif setnum == 2:
+            return self.track_sn2.serveonset_count(side)
+
+
 class QuadServiceStat(object):
     def __init__(self, det_score_items=None):
         # here _dct are dict{setnum -> WinLoss}
@@ -787,53 +978,10 @@ class QuadServiceStat(object):
         self.snd_adv_wl_dct = defaultdict(WinLoss)
         if det_score_items is not None:
             self.apply_detailed_games(det_score_items)
-        self.allow_bp_stat = AllowBreakPointStat()
         self.lastinrow = MatchLastInrow()  # who win last games serie in each set
         self.breakup_tracker = BreakupTracker()
-
-    def maxmin_for_tie(
-        self, back_side, back_opener, min_size=19, min_thresh=0.58, max_thresh=0.58
-    ):
-        def idx_to_side(idx):
-            return co.LEFT if idx <= 1 else co.RIGHT
-
-        fst_deuce_wl, fst_adv_wl, snd_deuce_wl, snd_adv_wl = self.get_all()
-        if (
-            fst_deuce_wl.size < min_size
-            or fst_adv_wl.size < min_size
-            or snd_deuce_wl.size < min_size
-            or snd_adv_wl.size < min_size
-        ):
-            return None
-        values = (
-            fst_deuce_wl.ratio,
-            fst_adv_wl.ratio,
-            snd_deuce_wl.ratio,
-            snd_adv_wl.ratio,
-        )
-        max_idx, max_val = max(enumerate(values), key=operator.itemgetter(1))
-        if max_val < max_thresh or idx_to_side(max_idx) != back_side:
-            return None
-        if back_opener:
-            max_num = 1 if max_idx in (0, 2) else 4  # opener tie num
-        else:
-            max_num = 2 if max_idx in (1, 3) else 3  # other tie num
-
-        min_idx, min_val = min(enumerate(values), key=operator.itemgetter(1))
-        if min_val <= min_thresh and idx_to_side(min_idx) != back_side:
-            if back_opener:
-                min_num = 2 if min_idx in (1, 3) else 3  # other tie num
-            else:
-                min_num = 1 if min_idx in (0, 2) else 4  # opener tie num
-            return max_num, min_num
-        else:
-            return (max_num,)
-
-    def allow_bp_counts(self, setnum=None):
-        return self.allow_bp_stat.get_counts(setnum=setnum)
-
-    def allow_bp_compare(self, setnum):
-        return self.allow_bp_stat.get_compare(setnum)
+        self.startgame_points_count = 0
+        self.edge_scores = EdgeScores()
 
     def get_all(self, setnum=None):
         if setnum is None:
@@ -936,7 +1084,8 @@ class QuadServiceStat(object):
                     adv_wl.hit(point.win())
 
     def update_with(
-        self, prev_score, prev_ingame, prev_left_service, score, ingame, left_service
+        self, prev_score, prev_ingame, prev_left_service,
+        score, ingame, left_service
     ):
         def empty(scr):
             return scr is None or len(scr) == 0
@@ -967,11 +1116,10 @@ class QuadServiceStat(object):
             )  # KeyError here will abort all
 
         except (QuadServiceStatError, KeyError, TypeError, ValueError) as err:
-            log.error(
+            log.exception(
                 f"QuadError: {err} {err.__class__.__name__}\n"
                 f"prsc {prev_score} pri {prev_ingame} prsrv {prev_left_service}"
                 f"\nsc {score} in {ingame} srv {left_service}",
-                exc_info=True,
             )
 
     @staticmethod
@@ -1074,18 +1222,21 @@ class QuadServiceStat(object):
                 sn, num_ingame_from, num_ingame_to, co.side(prev_left_service)
             )
         else:
+            prev_inset_scr = prev_score[-1]
             num_ingame_from = sc.ingame_to_num(prev_ingame, tiebreak=False)
             points_to_win = sc.num_ingame_to_win(num_ingame_from, tiebreak=False)
             num_ingame_to = get_num_ingame_to(num_ingame_from, points_to_win)
             self.__fill(sn, num_ingame_from, num_ingame_to, prev_left_service)
-            self.allow_bp_stat.close_previous(
-                prev_left_wingame, prev_score, prev_ingame, prev_left_service
-            )
             self.breakup_tracker.close_previous(
                 prev_score, prev_left_service, prev_left_wingame
             )
+            if sn <= 2:
+                self.edge_scores.put(
+                    setnum=sn, x=prev_inset_scr[0], y=prev_inset_scr[1],
+                    left_serve=prev_left_service)
 
-    def __continue_current(self, prev_score, prev_ingame, prev_left_service, ingame):
+    def __continue_current(self, prev_score, prev_ingame, prev_left_service,
+                           ingame):
         if prev_ingame == ingame:
             return
         sn = len(prev_score)
@@ -1096,13 +1247,11 @@ class QuadServiceStat(object):
                 sn, num_ingame_from, num_ingame_to, co.side(prev_left_service)
             )
         else:
-            prev_inset_scr = prev_score[-1]
             num_ingame_from = sc.ingame_to_num(prev_ingame, tiebreak=False)
             num_ingame_to = sc.ingame_to_num(ingame, tiebreak=False)
             self.__fill(sn, num_ingame_from, num_ingame_to, prev_left_service)
-            self.allow_bp_stat.continue_current(
-                prev_score, prev_ingame, prev_left_service, ingame
-            )
+            if prev_score[0] == (0, 0):
+                self.startgame_points_count += 1
 
     def __open_fresh(self, score, ingame, left_service):
         if ingame in (None, ("0", "0")):
@@ -1123,14 +1272,18 @@ class QuadServiceStat(object):
         prev_len, cur_len = len(prev_score), len(score)
         if prev_len < cur_len and cur_len >= 2:
             prev_full_set_sc = score[-2]
-            if sc.exist_point_increment(
-                prev_score[-1], prev_full_set_sc
-            ) and sc.is_full_set(prev_full_set_sc):
-                return prev_full_set_sc[0] > prev_full_set_sc[1]
-            else:
+            is_prev_full_set = sc.is_full_set(prev_full_set_sc)
+            if not is_prev_full_set:
                 raise QuadServiceStatLateError(
-                    "prevscore {} toscore {}".format(prev_score, score)
-                )
+                    "prevscore {} toscore {}".format(prev_score, score))
+            if (
+                sc.exist_point_increment(prev_score[-1], prev_full_set_sc)
+                or score[-1] == (0, 0)
+                # возм. также случай score[-1] == внутри-tie счет из завершенного tie
+                # min(score[-1]) == prev_score.idx_tiemin[prev_len-1]
+                # тогда надо как-то обойти молчанием этот выход наружу внутри-tie счета
+            ):
+                return prev_full_set_sc[0] > prev_full_set_sc[1]
         elif prev_len > cur_len:
             raise QuadServiceStatError(
                 "prevscore {} toscore {}".format(prev_score, score)
@@ -1150,5 +1303,355 @@ class QuadServiceStat(object):
                 else:
                     # we are late and do not know who did win
                     raise QuadServiceStatLateError(
-                        "prevscore {} toscore {}".format(prev_score, score)
+                        f"prevscore {prev_score} toscore {score} (set is continues)")
+
+
+class QuadServiceStatTest(unittest.TestCase):
+    def test_close_by_right(self):
+        qstat1 = QuadServiceStat()
+        qstat1.update_with(
+            prev_score=sc.Score("5-1"),
+            prev_ingame=("30", "40"),
+            prev_left_service=False,
+            score=sc.Score("5-2"),
+            ingame=("0", "0"),
+            left_service=True,
+        )
+
+        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
+        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
+
+        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.LEFT))
+
+    def test_close_by_left_then_fresh_right(self):
+        qstat1 = QuadServiceStat()
+        qstat1.update_with(
+            prev_score=sc.Score("5-1"),
+            prev_ingame=("30", "40"),
+            prev_left_service=False,
+            score=sc.Score("6-1 0-0"),
+            ingame=("0", "40"),
+            left_service=True,
+        )
+        # closing: right broken by 3 points
+        self.assertEqual(WinLoss(0, 2), qstat1.srv_win_loss(co.RIGHT, co.ADV))
+        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
+
+        # freshing: left loss 3 points
+        self.assertEqual(WinLoss(0, 2), qstat1.srv_win_loss(co.LEFT, co.ADV))
+        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
+
+    def test_close_by_left_then_fresh_right_tiebreak(self):
+        qstat1 = QuadServiceStat()
+        qstat1.update_with(
+            prev_score=sc.Score("6-4 5-6"),
+            prev_ingame=("30", "40"),
+            prev_left_service=True,
+            score=sc.Score("6-4 6-6"),
+            ingame=("0", "2"),
+            left_service=True,
+        )
+        # closing: left hold by win 3 points: ADV(2), DEUCE(1)
+        # freshing: right by win 1 point: DEUCE(1)
+        # freshing: left by loss 1 point: ADV(0)
+        self.assertEqual(WinLoss(2, 1), qstat1.srv_win_loss(co.LEFT, co.ADV))
+        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
+        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
+        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
+
+    def test_close_by_left_then_fresh_left_tiebreak(self):
+        qstat1 = QuadServiceStat()
+        qstat1.update_with(
+            prev_score=sc.Score("6-4 5-6"),
+            prev_ingame=("30", "40"),
+            prev_left_service=True,
+            score=sc.Score("6-4 6-6"),
+            ingame=("2", "0"),
+            left_service=True,
+        )
+        # closing: left hold by win 3 points: ADV(2), DEUCE(1)
+        # freshing: right opener by loss 1 point: DEUCE(0)
+        # freshing: left by win 1 point: ADV(1)
+        self.assertEqual(WinLoss(3, 0), qstat1.srv_win_loss(co.LEFT, co.ADV))
+        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
+        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
+        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
+
+
+class TotalSlices(object):
+    def __init__(self):
+        self._totcollect_from_key = defaultdict(TotalCollector)
+
+    def get_keys(self):
+        return list(self._totcollect_from_key.keys())
+
+    def get_max_keys_cardinality(self):
+        return max([k.cardinality() for k in self._totcollect_from_key.keys()])
+
+    def addition(self, score, keys):
+        normalized_total = score.normalized_total()
+        for key in keys:
+            self._totcollect_from_key[key].addition(normalized_total)
+
+    def substract(self, score, keys):
+        normalized_total = score.normalized_total()
+        for key in keys:
+            self._totcollect_from_key[key].substract(normalized_total)
+            if sum(self._totcollect_from_key[key].slots_hits) == 0:
+                del self._totcollect_from_key[key]
+
+    def report_line_list(self, fun_name, keys):
+        items = []
+        for key in keys:
+            if key in self._totcollect_from_key:
+                totcollect = self._totcollect_from_key[key]
+                items.append(
+                    rl.ReportLine(
+                        key=key,
+                        value=getattr(totcollect, fun_name)(),
+                        size=totcollect.hits_count(),
                     )
+                )
+        return rl.ReportLineList(items=items)
+
+    def write_report(
+        self,
+        filename,
+        memfun_name,
+        sort_asc,
+        sort_keyfun=itemgetter(1),
+        threshold=0,
+        head="",
+    ):
+        """Write to filename patterns: 'key value (size)\n'.
+        Sort on value (default) according to sort_asc."""
+        if len(self._totcollect_from_key) == 0:
+            return
+        key_val_num = []
+        for key, totcollector in self._totcollect_from_key.items():
+            if totcollector.hits_count() >= threshold:
+                val = getattr(totcollector, memfun_name)()
+                key_val_num.append((str(key), val, totcollector.hits_count()))
+        if sort_asc is True:
+            key_val_num.sort(key=sort_keyfun)
+        elif sort_asc is False:
+            key_val_num.sort(key=sort_keyfun, reverse=True)
+
+        key_len_max = max([len(str(k)) for k in self._totcollect_from_key.keys()])
+        with open(filename, "w") as fhandle:
+            if head:
+                fhandle.write(head + "\n")
+            fmt = "{0:_<" + str(key_len_max + 2) + "}  {1:5.2f} ({2})\n"
+            for key, value, num in key_val_num:
+                fhandle.write(fmt.format(key, value, num))
+
+    def value(self, key, memfun_name):
+        totcollector = self._totcollect_from_key[key]
+        return getattr(totcollector, memfun_name)()
+
+    def size(self, key):
+        totcollector = self._totcollect_from_key[key]
+        return totcollector.hits_count()
+
+    def get_collector(self, key):
+        return self._totcollect_from_key[key]
+
+
+def slices_table_report(
+    fun_name, slices, titles, idx1, idx2, min_diff, min_size, filter_keys, filename
+):
+    """output slices data which |slices[idx1].value[k] - slices[idx2].value[k]| > min_diff
+    for k in filter_keys.
+    If filter_keys is None then used keys from slices[idx1].get_keys(),
+                            slices[idx2].get_keys() with max key cardinality.
+    """
+    assert len(slices) == len(titles), "len(slices) == len(titles) not supplied"
+
+    def keys_selected(fun_name, filter_keys, slices, idx1, idx2, min_diff, min_size):
+        assert len(slices) > max(idx1, idx2), "len(slices) >= 3 not supplied"
+        selected = []
+        if filter_keys:
+            use_keys = filter_keys
+        else:
+            use_keys = list(set(slices[idx1].get_keys()) & set(slices[idx2].get_keys()))
+            max_key_cardinality = max([k.cardinality() for k in use_keys])
+            use_keys = [k for k in use_keys if k.cardinality() == max_key_cardinality]
+        for filter_key in use_keys:
+            if (
+                slices[idx1].size(filter_key) >= min_size
+                and slices[idx2].size(filter_key) >= min_size
+            ):
+                value1 = slices[idx1].value(filter_key, fun_name)
+                value2 = slices[idx2].value(filter_key, fun_name)
+                if abs(value1 - value2) >= min_diff:
+                    selected.append(filter_key)
+        return selected
+
+    sel_keys = keys_selected(
+        fun_name, filter_keys, slices, idx1, idx2, min_diff, min_size
+    )
+    if len(sel_keys) > 0:
+        key_len_max = max([len(str(k)) for k in sel_keys])
+        titles_line = " " * (key_len_max + 2)
+        for title in titles:
+            titles_line += title + "\t"
+        key_fmt = "{0:_<" + str(key_len_max + 2) + "} "
+        with open(filename, "w") as fh:
+            fh.write(titles_line + "\n")
+            for filter_key in sorted(sel_keys):
+                fh.write(key_fmt.format(filter_key))
+                for slc in slices:  # columns
+                    value = slc.value(filter_key, fun_name)
+                    size = slc.size(filter_key)
+                    fh.write(
+                        "{0:5.2f} ({1}) {2}".format(
+                            value, size, " " * (5 - len(str(size)))
+                        )
+                    )
+                fh.write("\n")
+
+
+class TotalCollector(object):
+    slots_count = 16
+    begin_slot_value = 12
+
+    def __init__(self):
+        self.slots_hits = []
+        for _ in range(TotalCollector.slots_count):
+            self.slots_hits.append(0)
+
+    def addition(self, normalized_total):
+        slot_idx = normalized_total - TotalCollector.begin_slot_value
+        assert slot_idx < TotalCollector.slots_count, "unexpected slot_idx: {}".format(
+            slot_idx
+        )
+        self.slots_hits[slot_idx] += 1
+
+    def substract(self, normalized_total):
+        slot_idx = normalized_total - TotalCollector.begin_slot_value
+        assert slot_idx < TotalCollector.slots_count, "unexpected slot_idx: {}".format(
+            slot_idx
+        )
+        assert (
+            self.slots_hits[slot_idx] > 0
+        ), "unexpected slot_idx: {} with zero count".format(slot_idx)
+        self.slots_hits[slot_idx] -= 1
+
+    def hits_count(self):
+        return sum(self.slots_hits)
+
+    def mean_value(self):
+        hits_num = self.hits_count()
+        assert hits_num > 0, "can not def mean_value without hits"
+        result = 0
+        slot_value = TotalCollector.begin_slot_value
+        for idx in range(TotalCollector.slots_count):
+            result += slot_value * self.slots_hits[idx]
+            slot_value += 1
+        return float(result) / float(hits_num)
+
+    def estimate_value(self, up_idx=7):
+        hits_num = self.hits_count()
+        assert hits_num > 0, "can not def mean_value without hits"
+        assert up_idx < TotalCollector.slots_count, "up_idx is out of range"
+
+        low_flip_sum = 0
+        for idx in range(up_idx):
+            low_flip_sum += (
+                co.centered_int_flip(idx + 1, 1, up_idx) * self.slots_hits[idx]
+            )
+        if low_flip_sum == 0:
+            return 999.0
+
+        up_sum = 0
+        for idx in range(up_idx, TotalCollector.slots_count):
+            up_sum += (idx + 1) * self.slots_hits[idx]
+
+        return float(up_sum) / float(low_flip_sum)
+
+    def estimate_value2(self, up_idx=7):
+        hits_num = self.hits_count()
+        assert hits_num > 0, "can not def estimate_value2 without hits"
+        assert up_idx < TotalCollector.slots_count, "up_idx is out of range"
+
+        (low_sum, low_hits_num) = (0, 0)
+        for idx in range(up_idx):
+            low_sum += (idx + 1) * self.slots_hits[idx]
+            low_hits_num += self.slots_hits[idx]
+        if low_hits_num == 0:
+            return 999.0
+
+        (up_sum, up_hits_num) = (0, 0)
+        for idx in range(up_idx, TotalCollector.slots_count):
+            up_sum += (idx + 1) * self.slots_hits[idx]
+            up_hits_num += self.slots_hits[idx]
+        if up_hits_num == 0:
+            return 0.0
+
+        return (float(up_sum) / float(up_hits_num)) / co.centered_float_flip(
+            float(low_sum) / float(low_hits_num), 1, up_idx
+        )
+
+    def estimate_value2_test(self, up_idx=7):
+        hits_num = self.hits_count()
+        assert hits_num > 0, "can not def estimate_value2 without hits"
+        assert up_idx < TotalCollector.slots_count, "up_idx is out of range"
+
+        (low_sum, low_hits_num) = (0, 0)
+        for idx in range(up_idx):
+            low_sum += (idx + 1) * self.slots_hits[idx]
+            low_hits_num += self.slots_hits[idx]
+        if low_hits_num == 0:
+            return 999.0
+
+        (up_sum, up_hits_num) = (0, 0)
+        for idx in range(up_idx, TotalCollector.slots_count):
+            up_sum += (idx + 1) * self.slots_hits[idx]
+            up_hits_num += self.slots_hits[idx]
+        if up_hits_num == 0:
+            return 0.0
+
+        low = float(low_sum) / float(low_hits_num)
+        low_fliped = co.centered_float_flip(low, 1, up_idx)
+        up = float(up_sum) / float(up_hits_num)
+        estimate = up / low_fliped
+        return estimate, low, low_fliped, low_sum, low_hits_num, up, up_sum, up_hits_num
+
+    def ratio_by_cmpfun(self, cmpfun):
+        true_count, false_count = (0, 0)
+        slot_value = TotalCollector.begin_slot_value
+        for idx in range(TotalCollector.slots_count):
+            if cmpfun(slot_value):
+                true_count += self.slots_hits[idx]
+            else:
+                false_count += self.slots_hits[idx]
+            slot_value += 1
+        assert (
+            true_count > 0 or false_count > 0
+        ), "empty TotalCollector when ratio_by_cmpfun"
+        return float(true_count) / float(true_count + false_count)
+
+    def ratio_by_le(self, value):
+        return self.ratio_by_cmpfun(lambda x: operator.le(x, value))
+
+    def ratio_by_le_18(self):
+        return self.ratio_by_le(18)
+
+    def ratio_by_le_19(self):
+        return self.ratio_by_le(19)
+
+    def ratio_by_le_20(self):
+        return self.ratio_by_le(20)
+
+    def ratio_by_le_21(self):
+        return self.ratio_by_le(21)
+
+    def ratio_by_le_22(self):
+        return self.ratio_by_le(22)
+
+    def ratio_by_le_23(self):
+        return self.ratio_by_le(23)
+
+
+if __name__ == "__main__":
+    unittest.main()

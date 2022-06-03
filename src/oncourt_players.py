@@ -6,16 +6,23 @@ from collections import defaultdict
 import datetime
 from contextlib import closing
 import argparse
+from typing import DefaultDict, Set, List
 
 import csv
 
-import log
+from loguru import logger as log
 import cfg_dir
 import common as co
 import tennis_time as tt
 import dba
 import tennis
 import file_utils as fu
+
+# commented type hint for below obj avoiding circular import tennis
+# Sex_PlayersSet = DefaultDict[
+#     str,  # sex
+#     Set[tennis.Player]
+# ]
 
 __players_from_sex = defaultdict(set)
 
@@ -93,12 +100,17 @@ def read_players_from_db(sex, players_set, min_date, players_ext_dct):
 
 
 def actual_players_id(sex):
-    if not actual_players_id.cache[sex]:
-        actual_players_id.cache[sex] = _read_actual_players_id(sex)
-    return actual_players_id.cache[sex]
+    if not _actual_playerid_cache[sex]:
+        _actual_playerid_cache[sex] = _read_actual_players_id(sex)
+    return _actual_playerid_cache[sex]
 
 
-actual_players_id.cache = defaultdict(list)
+Sex_PidList = DefaultDict[
+    str,  # sex
+    List[int]  # list of player_id
+]
+
+_actual_playerid_cache: Sex_PidList = defaultdict(list)
 
 
 def write_actual_players(sex, yearsnum=1.8):
@@ -130,7 +142,6 @@ def parse_command_line_args():
 if __name__ == "__main__":
     args = parse_command_line_args()
     if args.make_actual_players:
-        log.initialize(co.logname(__file__), "debug", "debug")
         if args.sex in ("wta", None):
             write_actual_players(sex="wta")
             log.info("wta actual players done")

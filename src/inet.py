@@ -6,7 +6,7 @@ from contextlib import closing
 import gzip
 import io
 
-import log
+from loguru import logger as log
 import file_utils as fu
 import common as co
 

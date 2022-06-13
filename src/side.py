@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 
 class Side:
     LEFT = "LEFT"
@@ -52,9 +53,6 @@ class Side:
         if isinstance(other, str):
             return self.value == other
         return self.value == other.value
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def abbr_text(self):
         return self.value[0]

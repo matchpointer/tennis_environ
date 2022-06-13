@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import os
 from typing import Optional
 
@@ -48,6 +49,7 @@ def load_df(storage_dir: str, subname: str) -> Optional[pd.DataFrame]:
         filename = os.path.join(storage_dir, subname, "df.csv")
         if os.path.isfile(filename):
             return pd.read_csv(filename, sep=",")
+    return None
 
 
 def substract_df(df: pd.DataFrame, df_substr: pd.DataFrame, inplace=True):

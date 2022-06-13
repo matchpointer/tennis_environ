@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 OPEN = 1
 OPEN2 = 2  # best_of_five only third set after 1:1
 DECIDED = (3,)

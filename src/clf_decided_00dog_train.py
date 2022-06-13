@@ -30,6 +30,16 @@ some notations:
     split (как параметр): None нет никакого разбинения
                           False разбиение на 2 части (train, test)
                           True разбиение на 3 части (train, eval, test)
+
+Примерная cхема тренировки:
+    - формирование переменной variant типа Variant и помещение ее в train_variants
+    - предв. очистка и извлечение из исходного набора csv части 'reserve'
+        python clf_decided_00dog_train.py  --variant=var_atp_main_clr_rtg500_300_1ffrs \
+           --reserve --random_seeds="157" --random_states="622"
+   - удобнее из jupyer notebook оценивать качество варианта:
+      random_train(variant, msg='', split=True, plot=True, verbose=True)
+   - удовлетворительный вариант сохраняем: variant.save_clf()
+   - лучший вариант дополнительно проверяется на 'reserve' наборе данных
 """
 import os
 from collections import defaultdict

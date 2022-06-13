@@ -56,7 +56,6 @@ var_atp_main_clr_rtg500_300_1ffrs = cco.Variant(
         'per_float_feature_quantization': ['0:border_count=512']
     },
     min_probas=get_default_min_probas('atp'),
-    profit_ratios=(0.5, 0.75),
     feature_names=default_atp_feat_names
 )
 
@@ -77,6 +76,5 @@ var_wta_main_clr_rtg550_350_1Npm04 = cco.Variant(
         'per_float_feature_quantization': ['0:border_count=512']
     },
     min_probas=cco.PosNeg(pos=0.48, neg=default_neg_proba['wta']),
-    profit_ratios=(0.5, 0.75),
     feature_names=default_wta_feat_names
 )

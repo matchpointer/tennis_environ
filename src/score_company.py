@@ -1,15 +1,15 @@
+# -*- coding=utf-8 -*-
 from typing import List
 
+from pages.base import WebPage
 from live import MatchStatus, LiveTourEvent
 import flashscore
 import tennis24
 
 
 class ScoreCompany:
-    abbrnames = ('FS', 'T24')
-
     def __init__(self, abbrname):
-        assert abbrname in self.abbrnames
+        assert abbrname in _abbrnames
         self.abbrname = abbrname
 
     def __repr__(self):
@@ -22,7 +22,7 @@ class ScoreCompany:
         raise NotImplementedError()
 
     def fetch_events(
-            self, webpage, skip_levels, match_status=MatchStatus.live, target_date=None
+            self, page_source: str, skip_levels, match_status=MatchStatus.live, target_date=None
     ) -> List[LiveTourEvent]:
         """ target_date used for construct datetime attr for matches.
             If target_date is None then assume today date """
@@ -33,15 +33,22 @@ class ScoreCompany:
             does init wta_chal_tour_surf, and add to sex_tourname_surf_map """
         raise NotImplementedError()
 
-    def initialize_players_cache(self, webpage, match_status=MatchStatus.scheduled):
+    def initialize_players_cache(self, page_source: str,
+                                 match_status=MatchStatus.scheduled):
         raise NotImplementedError()
 
-    def goto_date(self, drv, days_ago: int, start_date, wait_sec=5):
+    def goto_date(self, wpage: WebPage, days_ago: int, start_date):
         """ goto days_ago into past from start_date (today if start_date is None).
             if daysago > 0 then go to backward, if daysago=-1 then go to forward (+1 day)
             :returns target_date if ok, or raise TennisError
         """
-        raise NotImplementedError()
+        for _ in range(int(abs(days_ago))):
+            if days_ago < 0:
+                wpage.prev_day_button.click()
+            else:
+                wpage.next_day_button.click()
+            wpage.wait_page_loaded()
+        return wpage.parse_date()
 
 
 class FlashscoreCompany(ScoreCompany):
@@ -52,10 +59,11 @@ class FlashscoreCompany(ScoreCompany):
         return 'flashscore'
 
     def fetch_events(
-            self, webpage, skip_levels, match_status=MatchStatus.live, target_date=None
+            self, page_source: str, skip_levels, match_status=MatchStatus.live,
+            target_date=None
     ) -> List[LiveTourEvent]:
         return flashscore.make_events(
-            webpage, skip_levels, match_status,
+            page_source, skip_levels, match_status,
             target_date=target_date, plr_country_long=True)
 
     def initialize(self, prev_week=False):
@@ -65,11 +73,9 @@ class FlashscoreCompany(ScoreCompany):
         """
         flashscore.initialize(prev_week=prev_week)
 
-    def initialize_players_cache(self, webpage, match_status=MatchStatus.scheduled):
-        flashscore.initialize_players_cache(webpage, match_status=match_status)
-
-    def goto_date(self, drv, days_ago: int, start_date, wait_sec=5):
-        flashscore.goto_date(drv, days_ago, start_date, wait_sec=wait_sec)
+    def initialize_players_cache(self, page_source: str,
+                                 match_status=MatchStatus.scheduled):
+        flashscore.initialize_players_cache(page_source, match_status=match_status)
 
 
 class Tennis24Company(ScoreCompany):
@@ -80,10 +86,10 @@ class Tennis24Company(ScoreCompany):
         return 'flashscore'  # remain super name
 
     def fetch_events(
-            self, webpage, skip_levels, match_status=MatchStatus.live, target_date=None
+            self, page_source: str, skip_levels, match_status=MatchStatus.live, target_date=None
     ) -> List[LiveTourEvent]:
         return tennis24.make_events(
-            webpage, skip_levels, match_status, target_date=target_date)
+            page_source, skip_levels, match_status, target_date=target_date)
 
     def initialize(self, prev_week=False):
         """
@@ -92,15 +98,39 @@ class Tennis24Company(ScoreCompany):
         """
         tennis24.initialize(prev_week=prev_week)
 
-    def initialize_players_cache(self, webpage, match_status=MatchStatus.scheduled):
-        tennis24.initialize_players_cache(webpage, match_status=match_status)
+    def initialize_players_cache(self, page_source: str,
+                                 match_status=MatchStatus.scheduled):
+        tennis24.initialize_players_cache(page_source, match_status=match_status)
 
-    def goto_date(self, drv, days_ago: int, start_date, wait_sec=5):
-        tennis24.goto_date(drv, days_ago, start_date, wait_sec=wait_sec)
 
+class TennisbetsiteCompany(ScoreCompany):
+    def start_url(self):
+        return "http://www.tennisbetsite.com/"
+
+    def players_key(self):
+        return 'flashscore'  # remain super name
+
+    def fetch_events(
+            self, page_source: str, skip_levels, match_status=MatchStatus.live, target_date=None
+    ) -> List[LiveTourEvent]:
+        raise NotImplementedError()
+
+    def initialize(self, prev_week=False):
+        raise NotImplementedError()
+
+    def initialize_players_cache(self, page_source: str,
+                                 match_status=MatchStatus.scheduled):
+        raise NotImplementedError()
+
+    def goto_date(self, wpage: WebPage, days_ago: int, start_date):
+        raise NotImplementedError()
+
+
+_abbrnames = ('FS', 'T24', 'TBS')
 
 FS = FlashscoreCompany('FS')
 T24 = Tennis24Company('T24')
+TBS = TennisbetsiteCompany('TBS')
 
 
 def get_company(abbrname: str):
@@ -108,3 +138,5 @@ def get_company(abbrname: str):
         return T24
     if abbrname == 'FS':
         return FS
+    if abbrname == 'TBS':
+        return TBS

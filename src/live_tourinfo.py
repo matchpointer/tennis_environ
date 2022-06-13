@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 r"""
 module for TourInfo (used in live mode).
 """
@@ -53,9 +54,6 @@ class TourInfo:
             and self.doubles == other.doubles
             and self.itf == other.itf
         )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     @property
     def grand_slam(self):
@@ -128,7 +126,7 @@ class TourInfoCache:
             for sk_key in skip_keys:
                 self.cache[sk_key] = self.skip_obj
 
-    def get(self, key: str) -> TourInfo:
+    def get(self, key: str) -> Optional[TourInfo]:
         obj = self.cache.get(key)
         if obj is self.skip_obj:
             raise self.skip_exc_cls()

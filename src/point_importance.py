@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 r""" module for calculate point importance.
      www.princeton.edu/~dixitak/Teaching/IntroductoryGameTheory/Precepts/Prcpt03.pdf
      where article 'Illustration of Rollback in a Decision Problem,

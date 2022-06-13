@@ -19,16 +19,8 @@ import dict_tools
 import oncourt_players
 import matchstat
 import decided_set
-import impgames_stat
 import set2_after_set1loss_stat
-import inset_keep_recovery
 
-# import gamepoints_stat
-# import afterdeuce_stat
-# import beginpoints_stat
-import trail_choke_stat
-import tieloss_affect_stat
-import tie_stat
 import ratings
 
 
@@ -719,44 +711,11 @@ class Application(tkinter.Frame):
         row += 1
 
         self.notebook = tkinter.ttk.Notebook(self, height=240)
-        # self.notebook.add(beginpoints_stat.BeginPointsMutualPage(self.notebook, self),
-        #                   text='begp')
-        # self.notebook.add(afterdeuce_stat.AfterDeuceMutualPage(self.notebook, self),
-        #                   text='deu')
-        self.notebook.add(
-            impgames_stat.ImpgamesMutualPage(self.notebook, self), text="img"
-        )
-        self.notebook.add(
-            trail_choke_stat.TrailChokeMutualPage(self.notebook, self), text="trchoke"
-        )
-        self.notebook.add(
-            inset_keep_recovery.SetKeepRecoveryPageLGR(
-                self.notebook, self, setname="open"
-            ),
-            text="iS1rec",
-        )
-        self.notebook.add(
-            inset_keep_recovery.SetKeepRecoveryPageLGR(
-                self.notebook, self, setname="decided"
-            ),
-            text="iSDrec",
-        )
         self.notebook.add(
             set2_after_set1loss_stat.Set2RecoveryPageLGR(self.notebook, self),
             text="S2rec",
         )
-        # self.notebook.add(gamepoints_stat.GamePointsMutualPage(
-        #     self.notebook, self, 'gp'), text='gp')
-        # self.notebook.add(gamepoints_stat.GamePointsMutualPage(
-        #     self.notebook, self, 'bp'), text='bp')
-        self.notebook.add(
-            tie_stat.TieStatPageLBR(self.notebook, application=self), text="tie_st"
-        )
-        self.notebook.add(
-            tieloss_affect_stat.TielossAffectPageLGR(self.notebook, self), text="tieaff"
-        )
-        # self.notebook.add(
-        #     tie_importance_stat.TieImportanceStatPageLGR(self.notebook, self), text='tis')
+
         self.notebook.add(DecidedSetPageLGR(self.notebook, self), text="dec")
         self.notebook.add(
             ThirdBestOfThreePage(self.notebook, application=self), text="third"

@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import os
 import re
 import copy
@@ -137,9 +138,6 @@ class SizedValue:
     def __eq__(self, other):
         return co.equal_float(self.value, other.value) and self.size == other.size
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
     def ballanced_with(self, other):
         if other is None or other.value is None:
             return self
@@ -234,9 +232,6 @@ class ReportLine(SizedValue):
 
     def __eq__(self, other):
         return self.key == other.key and super(ReportLine, self).__eq__(other)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __add__(self, other):
         """ very resemble at common.balanced_value """

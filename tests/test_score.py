@@ -1,5 +1,5 @@
+# -*- coding=utf-8 -*-
 import unittest
-import doctest
 
 from score import (
     tie_opener_serve_at,
@@ -397,5 +397,4 @@ class ScoreTailGapIteratorTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    doctest.testmod()
     unittest.main()

@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import datetime
 import os
 from collections import defaultdict
@@ -41,7 +42,7 @@ def prep_t24_company_page(get_dba, get_t24_comp, t24_driver):
     # here we potentially corrupt get_t24_comp if use in other module of current session?
     get_t24_comp.initialize()
 
-    yield get_t24_comp, t24_driver.page()  # this is where the testing happens
+    yield get_t24_comp, t24_driver  # this is where the testing happens
 
 
 def _count_defined_matches(evt):
@@ -60,11 +61,19 @@ def _count_defined_matches(evt):
 
 
 @pytest.mark.webtest
+def test_get_calendar_date(prep_t24_company_page):
+    scr_company, wpage = prep_t24_company_page
+
+    date = wpage.parse_date()
+    assert date == datetime.date.today()
+
+
+@pytest.mark.webtest
 def test_make_and_log_events(prep_t24_company_page):
-    scr_company, page = prep_t24_company_page
+    scr_company, wpage = prep_t24_company_page
 
     events = scr_company.fetch_events(
-        webpage=page,
+        page_source=wpage.get_page_source(),
         skip_levels=skip_levels,
         match_status=match_status,
     )
@@ -83,5 +92,3 @@ def test_make_and_log_events(prep_t24_company_page):
         head=f"test_make_and_log_events {match_status}",
         extended=True
     )
-
-

@@ -1,10 +1,11 @@
+# -*- coding=utf-8 -*-
 import os
 
 import config_file as cf
 
 
 def oncourt_exe_dir():
-    return r"c:\Program Files (x86)\OnCourt"
+    return os.environ.get("ONCOURTPATH")
 
 
 # ----------------------------------- players ------------------------------------
@@ -84,22 +85,6 @@ def analysis_data_dir():
 
 def analysis_data_file(sex, typename):
     return os.path.join(analysis_data_dir(), sex + "_" + typename + "_data.csv")
-
-
-def flashscore_dir():
-    return cf.getval("dirs", "flashscore")
-
-
-def betcity_dir():
-    return cf.getval("dirs", "betcity")
-
-
-def predicts_dir():
-    return os.path.join(flashscore_dir(), "predicts")
-
-
-def lines_dir(sport="Tennis"):
-    return os.path.join(flashscore_dir(), "lines", sport)
 
 
 def detailed_score_dir():

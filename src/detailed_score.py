@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 """ database of DetailedScore records
 """
 from collections import OrderedDict, namedtuple
@@ -469,8 +470,7 @@ class DetailedGame(object):
     def __eq__(self, other):
         return self.state == other.state and self.points == other.points
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
+
 
     def __str__(self):
         # error_text(self.error)
@@ -701,9 +701,6 @@ class DetailedScore(OrderedDict):
             and self.retired == other.retired
             and super(DetailedScore, self).__eq__(other)
         )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def tostring(self):
         result = "err={}\n".format(self.error)

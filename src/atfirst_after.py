@@ -1,8 +1,8 @@
+# -*- coding=utf-8 -*-
 """
 module for defining player features: atfirst_after_absence, atfirst_after_retired
 """
 import os
-import sys
 import datetime
 from collections import defaultdict, namedtuple
 import argparse
@@ -13,7 +13,6 @@ from loguru import logger as log
 import cfg_dir
 import common as co
 import file_utils as fu
-import oncourt_players
 import score as sc
 import dba
 import feature
@@ -33,8 +32,6 @@ PAST_YEARS = 4
 # глубина отката в прошлое от сегодня для фиксации факта снятия
 MAX_DAYS_FOR_RETIRED = 30 * 4
 
-
-# AspectType = Union[Literal[ASPECT_ABSENCE], Literal[ASPECT_RETIRED]]
 
 root_dirname = cfg_dir.pre_live_dir(ROOT)
 
@@ -253,48 +250,3 @@ def parse_command_line_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sex", choices=["wta", "atp"])
     return parser.parse_args()
-
-
-def test_add_features():
-    pid = 8696
-    features = []
-    add_read_aspect_feature(
-        features, "wta", ASPECT_RETIRED, datetime.date.today(), pid, "fst"
-    )
-    print(f"feat len {len(features)}")
-    if features:
-        print(f"feat {features[0].name} {features[0].value}")
-
-
-def test_init_day():
-    import common_wdriver
-    from live import MatchStatus, skip_levels_work
-    from score_company import get_company
-
-    scr_company = get_company('T24')
-    oncourt_players.initialize("wta")
-    oncourt_players.initialize("atp")
-
-    drv = common_wdriver.wdriver(company=scr_company, headless=True)
-    drv.start()
-    drv.go_live_page()
-
-    initialize_day(
-        scr_company.fetch_events(
-            drv.page(),
-            skip_levels=skip_levels_work(),
-            match_status=MatchStatus.scheduled,
-        ),
-        datetime.date.today(),
-    )
-
-
-if __name__ == "__main__":
-    args = parse_command_line_args()
-    log.add('../log/atfirst_after.log', level='INFO',
-            rotation='10:00', compression='zip')
-    dba.open_connect()
-    test_init_day()
-    # unittest.main()
-    dba.close_connect()
-    sys.exit(0)

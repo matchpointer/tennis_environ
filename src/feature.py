@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from typing import Tuple, List
 from collections import UserList
 

@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from typing import Optional
 
 from common import to_ascii

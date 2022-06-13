@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 r""" module for calculate tie point importance.
      www.princeton.edu/~dixitak/Teaching/IntroductoryGameTheory/Precepts/Prcpt03.pdf
      where article 'Illustration of Rollback in a Decision Problem,
@@ -158,9 +159,6 @@ class PointCell(object):
             and self.srv_side == other.srv_side
             and self.srv_num == other.srv_num
         )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def step_forward(self, winpoint_side):
         """шаг вперед из self при условии что розыгрыш в

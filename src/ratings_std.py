@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from collections import defaultdict
 from contextlib import closing
 from typing import Tuple, Optional, DefaultDict

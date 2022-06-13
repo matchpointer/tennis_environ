@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from collections import namedtuple
 
 import numpy as np
@@ -10,7 +11,7 @@ import clf_common as cco
 """
 # base pipeline for module using (already defined random_seed, metric_name):
 import pprint
-variant = var_wta_cb_main
+variant = var_atp_main_clr_rtg500_300_1ffrs
 data, _ = fill_data(variant=variant, split=True)
 pools = clf_cat_tools.make_pools(data)
 clf = clf_cat_tools.train_model(pools, metric_name, early_stopping_rounds=early_stopping_rounds,
@@ -24,17 +25,9 @@ pprint.pprint(name_imp)
 # pools = eval_into_train_pools(key)
 # clf_cat_tools.cross_validation(clf, pools.train, metric_name, fold_count=5, stratified=True,
                                  early_stopping_rounds=early_stopping_rounds, plot=True)
-# learn_utils.print_most_used_scores(clf, data.test.X, data.test.y)
 # print str(clf_cat_tools.get_test_result(variant, clf, pools.test))
 # clf_cat_tools.save_clf(clf, MODEL, key, metric_name, random_seed)
 """
-
-
-def model_filename(model_name, key, metric_name, random_seed=None):
-    dirname = cco.persist_dirname(model_name, key, "clf")
-    suffix = "" if random_seed is None else "_" + str(random_seed)
-    filename = "{}/clf_{}{}.model".format(dirname, metric_name, suffix)
-    return filename
 
 
 def load_clf(filename: str):
@@ -211,13 +204,6 @@ def get_test_result(variant, clf, pool: Pool):
             poswl.hit(lab == 1)
         elif min_neg_proba is not None and prob01[0] >= min_neg_proba:
             negwl.hit(lab == 0)
-    profit, pos_profit, neg_profit = 0.0, 0.0, 0.0
-    profit_ratios = variant.profit_ratios
-    if poswl:
-        pos_profit = round(poswl.size * (poswl.ratio - profit_ratios.pos_ratio), 3)
-    if negwl:
-        neg_profit = round(negwl.size * (negwl.ratio - profit_ratios.neg_ratio), 3)
-    profit = pos_profit + neg_profit
     return cco.Result(
         name=variant.name,
         mean=cco.fmt((poswl + negwl).ratio),
@@ -225,8 +211,6 @@ def get_test_result(variant, clf, pool: Pool):
         scr=cco.fmt(clf.score(pool)),
         poswl=poswl,
         negwl=negwl,
-        profit=profit,
-        pos_profit=pos_profit,
     )
 
 
@@ -240,13 +224,6 @@ def get_test_result_3class(variant, clf, pool: Pool):
             poswl.hit(lab == 1)
         elif min_neg_proba is not None and prob0z1[0] >= min_neg_proba:
             negwl.hit(lab == -1)
-    profit, pos_profit, neg_profit = 0.0, 0.0, 0.0
-    profit_ratios = variant.profit_ratios
-    if poswl:
-        pos_profit = round(poswl.size * (poswl.ratio - profit_ratios.pos_ratio), 3)
-    if negwl:
-        neg_profit = round(negwl.size * (negwl.ratio - profit_ratios.neg_ratio), 3)
-    profit = pos_profit + neg_profit
     return cco.Result(
         name=variant.name,
         mean=cco.fmt((poswl + negwl).ratio),
@@ -254,7 +231,5 @@ def get_test_result_3class(variant, clf, pool: Pool):
         scr=cco.fmt(clf.score(pool)),
         poswl=poswl,
         negwl=negwl,
-        profit=profit,
-        pos_profit=pos_profit,
     )
 

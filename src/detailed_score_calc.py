@@ -12,13 +12,11 @@ from loguru import logger as log
 import common as co
 from stat_cont import WinLoss
 from feature import Feature, RigidFeature, make_pair2, make_pair, FeatureList
-from score import Scr, nil_scr, ingame_to_num, tie_normalized
+from score import Scr, nil_scr
 from tennis import Match
 from lev import soft_level
 from detailed_score import SetItems, error_contains
 import ratings_elo
-from side import Side
-from markov import set_win_prob2, tie_win_prob2
 from stat_cont import EdgeScrTrack
 
 
@@ -150,123 +148,6 @@ class CalcAbsentGames(Calc):
                 return [RigidFeature(name=self.feature_name(prefix), value=None)]
             n_absent_games += calc.n_absent_games
         return [RigidFeature(name=self.feature_name(prefix), value=n_absent_games)]
-
-
-class CalcWinclose(Calc):
-    """how close players was as set-leader"""
-
-    feat_corename = "winclose"
-
-    def __init__(
-        self,
-        sex: str,
-        surface,
-        level,
-        is_qual: bool,
-        min_prob: float,
-        is_mean: bool = False,
-        is_before66: bool = False,
-    ):
-        self.fst_measure = 0.0
-        self.snd_measure = 0.0
-        self.min_prob = min_prob
-        self.sex = sex
-        self.surface = surface
-        self.level = level
-        self.is_qual = is_qual
-        self.fst_n = 0
-        self.snd_n = 0
-        self.is_mean = is_mean
-        self.is_before66 = is_before66
-
-    def _feature_name(self, prefix: str, is_fst: bool) -> str:
-        return (
-            f"{prefix}_{'fst' if is_fst else 'snd'}_"
-            f"{self.feat_corename}_{'mean_' if self.is_mean else ''}"
-            f"{'before66_' if self.is_before66 else ''}"
-            f"{int(self.min_prob * 100)}"
-        )
-
-    def result_features(self, prefix: str) -> List[Feature]:
-        if self.is_mean:
-            val1 = (self.fst_measure / self.fst_n) if self.fst_n else 0.0
-            val2 = (self.snd_measure / self.snd_n) if self.snd_n else 0.0
-        else:
-            val1 = self.fst_measure
-            val2 = self.snd_measure
-        f1, f2 = make_pair(
-            fst_name=self._feature_name(prefix, is_fst=True),
-            snd_name=self._feature_name(prefix, is_fst=False),
-            fst_value=val1,
-            snd_value=val2,
-        )
-        return [f1, f2]
-
-    def proc_set(self, setitems: SetItems):
-        result_loser, result_winner = 0.0, 0.0
-        loser_n, winner_n = 0, 0
-        is_fliped = False
-        setopener = setitems.set_opener_side()
-        if setopener == co.RIGHT:
-            setitems.flip()
-            is_fliped = True
-        setwinner = setitems.set_winner_side()
-        if setwinner is None:
-            return
-        setloser: Side = setwinner.fliped()
-        for scr, dg in setitems:
-            if self.is_before66 and (scr == (6, 6) or sum(scr) > 12):
-                break
-            for pnt in dg:
-                p_scr_txt = pnt.text_score(before=True)
-                p_scr = ingame_to_num(p_scr_txt, tiebreak=dg.tiebreak)
-                if dg.tiebreak:
-                    p_scr = tie_normalized(p_scr, is_super=dg.supertiebreak)
-                    prob = tie_win_prob2(
-                        self.sex,
-                        self.surface,
-                        self.level,
-                        self.is_qual,
-                        p_scr,
-                        Side(dg.left_opener),
-                        Side(pnt.serve()),
-                        target_side=setloser,
-                    )
-                else:
-                    prob = set_win_prob2(
-                        self.sex,
-                        self.surface,
-                        self.level,
-                        self.is_qual,
-                        scr,
-                        p_scr,
-                        Side(dg.left_opener),
-                        target_side=setloser,
-                    )
-                if prob is not None:
-                    if prob >= self.min_prob:
-                        result_loser += prob
-                        loser_n += 1
-                    if (1.0 - prob) >= self.min_prob:
-                        result_winner += 1.0 - prob
-                        winner_n += 1
-                if pnt.win_game() or pnt.loss_game():
-                    break
-        if setloser.is_left():
-            self.fst_measure = result_loser
-            self.fst_n = loser_n
-            self.snd_measure = result_winner
-            self.snd_n = winner_n
-        else:
-            self.snd_measure = result_loser
-            self.snd_n = loser_n
-            self.fst_measure = result_winner
-            self.fst_n = winner_n
-
-        if is_fliped:
-            self.fst_measure, self.snd_measure = self.snd_measure, self.fst_measure
-            self.fst_n, self.snd_n = self.snd_n, self.fst_n
-            setitems.flip()
 
 
 class CalcLastinrow(Calc):

@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 r"""
 module gives main entities for live.
 """
@@ -11,7 +12,6 @@ import common as co
 import decided_set
 import feature
 import get_features
-import inset_keep_recovery
 from last_results import LastResults
 from loguru import logger as log
 from surf import Clay, Grass
@@ -27,13 +27,9 @@ import stopwatch
 from tennis import Match, Round, Player, HeadToHead
 import player_name_ident
 import tennis_time as tt
-import total
 import tournament as trmt
 import weeked_tours
-import trail_choke_stat
-import tie_stat
 from clf_common import FeatureError
-import after_tie_perf_stat
 import atfirst_after
 from live_tourinfo import TourInfo
 from tour_name import TourName
@@ -458,59 +454,6 @@ class LiveMatch(Match):
                 self.features.append(f1set2k)
                 self.features.append(f2set2k)
 
-                inset_keep_recovery.add_read_features(
-                    self.features,
-                    self.sex,
-                    ("decided",),
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    sizes_shift=-3,
-                    feat_suffix="_sh-3",
-                )
-
-                trail_choke_stat.add_agr_read_features(
-                    self.features,
-                    self.sex,
-                    "trail",
-                    None,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                )
-                trail_choke_stat.add_agr_read_features(
-                    self.features,
-                    self.sex,
-                    "choke",
-                    None,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                )
-
-                tie_stat.add_read_sv_features_pair(
-                    self.features,
-                    "sd_tie_ratio",
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    ("decided",),
-                    min_size=2,
-                    is_ratio=True,
-                )
-
-                after_tie_perf_stat.add_read_features_pair(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    after_tie_perf_stat.ASPECT_PRESS,
-                )
-                after_tie_perf_stat.add_read_features_pair(
-                    self.features,
-                    self.sex,
-                    self.first_player.ident,
-                    self.second_player.ident,
-                    after_tie_perf_stat.ASPECT_UNDER,
-                )
-
                 atfirst_after.add_read_features(
                     self.features,
                     self.sex,
@@ -606,8 +549,6 @@ class LiveMatch(Match):
         plr_feature("choke")
         plr_feature("absence")
         plr_feature("retired")
-        plr_feature(after_tie_perf_stat.ASPECT_UNDER)
-        plr_feature(after_tie_perf_stat.ASPECT_PRESS)
         plr_feature("pastyear_nmatches")
         plr_sv_feature("sd_tie_ratio")
         simple_feature(f"{advantage_tie_ratio.ADV_PREF}sd_tie_ratio")
@@ -678,9 +619,6 @@ class LiveMatch(Match):
 
     def __eq__(self, other):
         return self.name == other.name
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def change_surf_advantage_side(self):
         if not self.fst_last_res or not self.snd_last_res:
@@ -918,11 +856,8 @@ class LiveTourEvent:
 
     def define_features(self):
         if not self.features_tried and self.level in (
-            "gs",
-            "main",
-            "masters",
-            "chal",
-        ):  # for chal
+            lev.gs, lev.main, lev.masters, lev.chal
+        ):
             self.features_tried = True
             pre_live_dir.prepare_dir("tours")
             if pre_live_dir.is_data(self.pre_live_name()):
@@ -930,21 +865,6 @@ class LiveTourEvent:
                 for fname, fval in dct.items():
                     self.features.append(feature.RigidFeature(name=fname, value=fval))
                 return
-            aset_sv = total.get_tour_avgset(
-                self.sex,
-                self.level == "chal",
-                self.best_of_five,
-                self.surface,
-                self.tour_name,
-                self.qualification,
-                max_year=datetime.date.today().year - 1,
-            )
-            if aset_sv:
-                self.features.append(
-                    feature.RigidFeature(name="tour_avgset", value=aset_sv.value)
-                )
-                dct = {"tour_avgset": aset_sv.value}
-                pre_live_dir.save_data(self.pre_live_name(), dct)
 
     def define_level(self):
         if self.tour_info is not None and (
@@ -1011,6 +931,3 @@ class LiveTourEvent:
 
     def __eq__(self, other):
         return self.tour_info == other.tour_info
-
-    def __ne__(self, other):
-        return not self.__eq__(other)

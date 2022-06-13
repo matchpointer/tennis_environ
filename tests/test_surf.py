@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import unittest
 
 from surf import make_surf, Clay, Grass, get_code, get_name

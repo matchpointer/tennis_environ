@@ -1,10 +1,10 @@
+# -*- coding=utf-8 -*-
 import unittest
 
 from tennis24 import (
     itf_wta_money_tourname,
     itf_atp_money_tourname,
-    TourInfoFlashscore,
-    split_ontwo_enclosed
+    TourInfoFlashscore
 )
 
 
@@ -79,13 +79,6 @@ class TourInfoFlashscoreSimpleTest(unittest.TestCase):
         self.assertEqual("descript", obj.tour_name.desc_name)
         self.assertEqual("Carpet", obj.surface)
         self.assertEqual("France", obj.country)
-
-
-class SplitOntwoEnclosedTest(unittest.TestCase):
-    def test_split_ontwo_enclosed(self):
-        text = "ab(c)-d(ef)"
-        p1, p2 = split_ontwo_enclosed(text, delim_op="(", delim_cl=")")
-        self.assertTrue(p1 == "ab(c)-d" and p2 == "ef")
 
 
 @unittest.skip(reason='not actual')

@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from os.path import isfile
 import datetime
 from enum import Enum

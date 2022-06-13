@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import common as co
 
 
@@ -69,9 +70,6 @@ class SyllabledName:
         raise co.TennisError(
             "bad compare {} and {}".format(self.__class__.__name__, type(other))
         )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __contains__(self, item):
         return item in self.name

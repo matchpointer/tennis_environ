@@ -641,10 +641,10 @@ class HeadToHead:
 
     TIME_DISCOUNT_FACTOR = 0.8
 
-    __slots__ = ('tour_match_aset', 'fst_player', 'snd_player', 'date')
+    __slots__ = ('tour_match', 'fst_player', 'snd_player', 'date')
 
     def __init__(self, sex, match, completed_only=False):
-        self.tour_match_aset = []
+        self.tour_match = []
         self.fst_player = match.first_player
         self.snd_player = match.second_player
         self.date = match.date
@@ -654,26 +654,26 @@ class HeadToHead:
         return co.to_align_text(
             [
                 (t, m.rnd, m.first_player.name, m.score)
-                for t, m, _ in self.tour_match_aset
+                for t, m in self.tour_match
             ]
         )
 
     def __getitem__(self, index):
-        return self.tour_match_aset[index]
+        return self.tour_match[index]
 
     def __bool__(self):
-        return bool(self.tour_match_aset)
+        return bool(self.tour_match)
 
     __nonzero__ = __bool__
 
     def __len__(self):
-        return len(self.tour_match_aset)
+        return len(self.tour_match)
 
     def __iter__(self):
-        return iter(self.tour_match_aset)
+        return iter(self.tour_match)
 
     def __reversed__(self):
-        return reversed(self.tour_match_aset)
+        return reversed(self.tour_match)
 
     def direct(self, default_value=None):
         """DIRECT = H2H(1, 2) - H2H(2, 1)
@@ -695,7 +695,7 @@ class HeadToHead:
         def win_counts():
             fst_cnt, snd_cnt = 0, 0
             fst_sum, snd_sum = 0.0, 0.0
-            for tour, match, _ in self.tour_match_aset:
+            for tour, match, _ in self.tour_match:
                 disc_coef = time_discount_coef(tour.date)
                 if match.first_player == self.fst_player:
                     fst_cnt += 1
@@ -797,9 +797,8 @@ class HeadToHead:
                         rnd=Round(rnd_name),
                         date=match_date,
                     )
-                avgset = self._get_avgset(tour, m)
-                self.tour_match_aset.append((tour, m, avgset))
-        self.tour_match_aset.sort(key=lambda i: i[0].date, reverse=True)
+                self.tour_match.append((tour, m))
+        self.tour_match.sort(key=lambda i: i[0].date, reverse=True)
         self._remove_current_match(match.date)
 
     def _remove_current_match(self, current_match_date):
@@ -808,65 +807,17 @@ class HeadToHead:
         говорит что надо брать турниры прошлой недели и так далее в прошлое.
         Но для GrSlam на прошл. неделе мы можем найти этот же шлем (с current_match_date)
         """
-        if len(self.tour_match_aset) > 0:
+        if len(self.tour_match) > 0:
             if (
                 current_match_date is not None
-                and self.tour_match_aset[0][1].date == current_match_date
+                and self.tour_match[0][1].date == current_match_date
             ):
-                del self.tour_match_aset[0]
-
-    @staticmethod
-    def _get_avgset(tour, match):
-        """here tour does not contain matches"""
-        import total
-
-        return total.get_tour_local_avgset(
-            tour, match.rnd, mode=total.LocalAvgsetMode.curyear_firstly, min_size=15
-        )
-
-    def total_target_evaled(self, target_best_of_five, target_avgset):
-        import total
-
-        sumer = st.Sumator()
-        sets_sumer = st.Sumator()
-        for tour, match, aset in self.tour_match_aset:
-            if aset is not None:
-                avgset_coef = target_avgset / aset
-            else:
-                year = max(2005, tour.date.year)
-                aset = total.generic_avgset(
-                    tour.sex,
-                    tour.surface,
-                    tour.level == "chal",
-                    match.rnd.qualification(),
-                    min(2017, year),
-                )
-                if aset is None:
-                    log.error(
-                        "{} H2H {}-{} fail avgset at t-date{}".format(
-                            tour.sex, self.fst_player, self.snd_player, tour.date
-                        )
-                    )
-                    avgset_coef = 1.0
-                else:
-                    avgset_coef = target_avgset / aset
-            total_value = match.score.normalized_total(treat_bo5_as_bo3=False)
-            sets_value = match.score.sets_count()
-            best_of_five = match.score.best_of_five()
-            if (best_of_five, target_best_of_five) == (False, True):
-                total_value = total.normbo3_to_normbo5(total_value)
-                sets_value = total.setsbo3_to_setsbo5(sets_value)
-            elif (best_of_five, target_best_of_five) == (True, False):
-                total_value = total.normbo5_to_normbo3(total_value)
-                sets_value = total.setsbo5_to_setsbo3(sets_value)
-            sumer.hit(total_value * avgset_coef)
-            sets_sumer.hit(sets_value * avgset_coef)
-        return sumer.average(), sets_sumer.average()
+                del self.tour_match[0]
 
     def recently_won_player_id(self, max_history_days=25):
-        if not self.tour_match_aset:
+        if not self.tour_match:
             return None
-        match = self.tour_match_aset[0][1]
+        match = self.tour_match[0][1]
         if match.date:
             now_date = datetime.date.today()
             if (now_date - match.date) <= datetime.timedelta(days=max_history_days):

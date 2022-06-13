@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import pytest
 
 from ratings_elo import get_expected_scores, get_new_elo, k_factor
@@ -27,7 +28,7 @@ def get_delta_pts(
         actual_score=actual_loser_scr,
         expected_score=loser_expected_prob,
     )
-    return (winner_new_pts - winner_prev_pts, loser_new_pts - loser_prev_pts)
+    return winner_new_pts - winner_prev_pts, loser_new_pts - loser_prev_pts
 
 
 @pytest.mark.parametrize(

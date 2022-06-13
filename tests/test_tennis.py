@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import datetime
 import pytest
 
@@ -88,6 +89,7 @@ def test_round_cmp():
     assert Round("First") == "First"
 
 
+@pytest.mark.skip("it was actual when match was in database")
 def test_h2h_ito_kukushkin(get_dba):
     plr1 = Player(ident=8313, name="Tatsuma Ito", cou="JPN")
     plr2 = Player(ident=9043, name="Mikhail Kukushkin", cou="KAZ")

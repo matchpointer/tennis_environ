@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 """
 database of classifier's predicts
 """
@@ -98,9 +99,6 @@ class PredictRec:
             and self.back_id == other.back_id
             and self.oppo_id == other.oppo_id
         )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __hash__(self):
         return hash(

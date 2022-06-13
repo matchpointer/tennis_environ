@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 """ database of MatchRec with DetailedScore
 """
 import os
@@ -61,9 +62,6 @@ class MatchRec(object):
             and self.left_id == other.left_id
             and self.right_id == other.right_id
         )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __hash__(self):
         return hash((self.tour_id, self.rnd, self.left_id, self.right_id))

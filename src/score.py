@@ -389,9 +389,6 @@ class Score(object):
             and self.supertie_scr == other.supertie_scr
         )
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
     def __getitem__(self, index):
         return self.wl_games[index]
 

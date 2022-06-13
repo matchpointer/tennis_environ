@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 """
 предоставляет класс TourName
 мотивация:
@@ -60,9 +61,6 @@ class TourName:
                 and self.desc_name == other.desc_name
             )
         return self.name == other.name and self.number == other.number
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __repr__(self):
         if self.number is None:

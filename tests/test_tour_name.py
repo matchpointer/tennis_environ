@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import unittest
 
 from tour_name import tourname_number_split, normalized_name

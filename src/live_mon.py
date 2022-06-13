@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 r"""
 module gives Application with upper level logic.
 """
@@ -16,9 +17,11 @@ import tkinter.ttk
 from selenium.common.exceptions import TimeoutException
 from requests.exceptions import RequestException
 
+# import clf_decided_00_apply
 import clf_decided_00dog_apply
 import stopwatch
 
+import common as co
 from loguru import logger as log
 import cfg_dir
 import config_personal
@@ -28,9 +31,11 @@ import bet_coefs
 import dba
 import sms_svc
 import oncourt_players
-import common_wdriver
+from pages.create_page import create_page
+from wdriver import stop_web_driver
 from score_company import get_company, ScoreCompany
 import matchstat
+import file_utils as fu
 
 from clf_common import load_variants
 import decided_set
@@ -40,6 +45,7 @@ from live import (
     LiveMatch,
     skip_levels_work,
 )
+from debug_helper import get_debug_match_name, set_debug_match_name, debug_match_data_save
 from tournament_misc import log_events, events_tostring
 import betfair_client
 from betfair_bet import winmatch_market, winset2_market, winset1_market
@@ -99,10 +105,9 @@ class Application(tkinter.Frame):
         self.updating = False
         self.alerts_from_sex = defaultdict(list)
         self.make_alerts()
-        self.drv = common_wdriver.wdriver(company, headless=True)
-        self.drv.start()
-        self.drv.go_live_page()
-        company.initialize_players_cache(self.drv.page())
+        self.wpage = create_page(score_company=company, is_main=True,
+                                 headless=True)
+        company.initialize_players_cache(self.wpage.get_page_source())
         self.wake_timer = None  # or stopwatch.PointTimer(datetime)
         self.sms_start_timer = stopwatch.PointTimer(
             datetime.datetime(year=2021, month=7, day=27, hour=8, minute=20)
@@ -228,7 +233,9 @@ class Application(tkinter.Frame):
         return int(self.timer.threshold) == self.quick_timeout
 
     def save_page(self):
-        self.drv.save_page(filename="./live_mon_cur_page.html", encoding="utf8")
+        debug_match_data_save()
+        fu.write(filename="./live_mon_cur_page.html",
+                 data=self.wpage.get_page_source(), encoding="utf8")
 
     def log_events(self, head="", extended=True, flush=False):
         log_events(self.events, head=head, extended=extended, flush=flush)
@@ -258,9 +265,8 @@ class Application(tkinter.Frame):
         fresh_events = []
         for try_num in range(1, 4):
             try:
-                self.drv.live_page_refresh()
                 fresh_events = self.company.fetch_events(
-                    webpage=self.drv.page(),
+                    page_source=self.wpage.get_page_source(),
                     skip_levels=skip_levels_work())
                 break
             except (
@@ -271,7 +277,7 @@ class Application(tkinter.Frame):
                     "drv.page_source {}\nfail try_num: {}".format(err, try_num))
                 time.sleep(20)
                 try:
-                    self.drv.current_page_refresh()
+                    self.wpage.refresh()
                 except (RequestException, TimeoutException) as err2:
                     log.exception(
                         "drv.get {}\nfail try_num: {}".format(err2, try_num)
@@ -429,7 +435,14 @@ class Application(tkinter.Frame):
     def out_betfair_permit(msg: AlertMessage) -> bool:
         return (
             (msg.case_name.startswith("decided_00") and 'backdog' in msg.comment)
+            #
+            # or (msg.case_name.startswith("decided_00")
+            #     and 'backfav' in msg.comment)
+            #
             or (msg.case_name.startswith("decided_00nodog"))
+            #
+            # or (msg.case_name.startswith("secondset_00") and 'revenge' in msg.comment)
+            #
             or msg.case_name.startswith("decided_66")
             or msg.case_name.startswith("open_66")
         )
@@ -534,15 +547,25 @@ def main():
         rnd_detailing=True,
     )
     weeked_tours.use_tail_tours_cache = True
+    # impgames_stat.initialize_results(
+    #     'wta', min_date=datetime.date.today() - datetime.timedelta(
+    #                                      days=impgames_stat.HISTORY_DAYS))
+    # impgames_stat.initialize_results(
+    #     'atp', min_date=datetime.date.today() - datetime.timedelta(
+    #                                      days=impgames_stat.HISTORY_DAYS))
+    # tie_stat.initialize_results(sex=None,
+    #                             min_date=now_date - datetime.timedelta(days=365 * 3),
+    #                             max_date=None)
     company = get_company(args.company_name)
     company.initialize()
+    set_debug_match_name("no debug")
+    log.info("DEBUG_MATCH_DATA_NAME: {}".format(get_debug_match_name()))
     app = Application(company=company, quick_timeout=2.7, slow_timeout=132)
     app.master.title("Live monitor")
     predicts_db.initialize()
     app.mainloop()
     log.info("Live monitor exiting")
-    app.drv.stop()
-    app.drv = None
+    stop_web_driver(app.wpage.get_web_driver())
     if app.events_file is not None:
         app.events_file.close()
     predicts_db.finalize()

@@ -1,9 +1,9 @@
+# -*- coding=utf-8 -*-
 r"""
 module gives possibility (make_events) for parsing live matches at flashscore site
 including points score in game (for example 40:30)
 """
 import datetime
-import time
 from collections import defaultdict, Counter
 from typing import Optional, Tuple, List
 import re
@@ -592,48 +592,6 @@ def _make_current_date(root_elem):
                     month=int(month_txt),
                     day=int(day_txt),
                 )
-
-
-def goto_date(fsdrv, days_ago, start_date, wait_sec=5):
-    """ goto days_ago into past from start_date (today if start_date is None).
-        if daysago > 0 then go to backward, if daysago=-1 then go to forward (+1 day)
-        :returns target_date if ok, or raise TennisError
-    """
-
-    def prev_day_button_coords():
-        # y=695 with advertise. handy measure at Gennady notebook. y=585 without advertise
-        return 1235, 585
-
-    def next_day_button_coords():
-        return 1235 + 184, 585
-
-    def neighbour_day_click(is_backward):
-        import automate
-
-        if is_backward:
-            x, y = prev_day_button_coords()
-        else:
-            x, y = next_day_button_coords()
-        automate.mouse_click((x, y))
-        fsdrv.implicitly_wait(wait_sec)
-        time.sleep(5)
-
-    target_date = start_date - datetime.timedelta(days=days_ago)
-    for _ in range(abs(days_ago)):
-        if days_ago >= 0:
-            neighbour_day_click(is_backward=True)
-        else:
-            neighbour_day_click(is_backward=False)
-    fsdrv.implicitly_wait(wait_sec)
-    parser = lxml.html.HTMLParser(encoding="utf8")
-    tree = lxml.html.document_fromstring(fsdrv.page(), parser)
-    cur_date = _make_current_date(tree)
-    if cur_date != target_date:
-        raise co.TennisError(
-            "target_date {} != cur_date {} days_ago: {}".format(
-                target_date, cur_date, days_ago)
-        )
-    return cur_date
 
 
 wta_chal_tour_surf = set()  # set of (tour_name, surface)

@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import os
 from collections import namedtuple, defaultdict
 import copy
@@ -176,9 +177,6 @@ class LevSurf:
     def __eq__(self, other):
         return self.levels == other.levels and self.surfaces == other.surfaces
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
     def drop_by_condition(self, df: pd.DataFrame) -> None:
         if self.drop_cond is None:
             return
@@ -301,7 +299,6 @@ class Variant:
         cls,
         clf_pars,
         min_probas: Union[PosNeg, PosNeg2],
-        profit_ratios: Tuple[float, float],
         feature_names: FeatureNames,
         weight_mode=WeightMode.NO,
         drop_cond=None,
@@ -314,9 +311,6 @@ class Variant:
         self.cls = cls
         self.clf_pars = clf_pars  # dict: param_name -> param_value
         self.min_probas = min_probas
-        self.profit_ratios = ProfitRatios(
-            pos_ratio=profit_ratios[0], neg_ratio=profit_ratios[1]
-        )
         self.feature_names = feature_names
         self.weight_mode = weight_mode
         self.clf = None
@@ -349,9 +343,6 @@ class Variant:
 
     def exist_chal(self):
         return self.key.exist_chal()
-
-    def get_profit_ratios(self):
-        return self.profit_ratios
 
     def set_random_state(self, random_state):
         if self.is_cb_native():
@@ -808,15 +799,13 @@ class OutResult(object):
 class Result(object):
     """for tests and experiments"""
 
-    def __init__(self, name, mean, leny, scr, poswl, negwl, profit, pos_profit=None):
+    def __init__(self, name, mean, leny, scr, poswl, negwl):
         self.name = name
         self.mean = mean
         self.leny = leny
         self.scr = scr
         self.poswl = poswl
         self.negwl = negwl
-        self.profit = profit
-        self.pos_profit = pos_profit
 
     def hit_ratio(self, winloss):
         if self.leny:
@@ -827,22 +816,14 @@ class Result(object):
             hit_ratio = self.hit_ratio(winloss)
             return "" if hit_ratio is None else "{:.2f}".format(hit_ratio)
 
-        def pos_profit_text():
-            if self.pos_profit is None:
-                return ""
-            return " pos_prof {:.3f}".format(self.pos_profit)
-
-        profit_text = "" if self.profit is None else " prof {:.3f}".format(self.profit)
-        result = "{} mean: {} scr: {} pos: {}{} phit: {}\n\tneg: {} nhit: {}{}".format(
+        result = "{} mean: {} scr: {} pos: {} phit: {}\n\tneg: {} nhit: {}".format(
             self.name,
             self.mean,
             self.scr if self.scr else "",
             self.poswl,
-            pos_profit_text(),
             hit_ratio_text(self.poswl),
             self.negwl,
             hit_ratio_text(self.negwl),
-            profit_text,
         )
         return result
 
@@ -857,13 +838,6 @@ def get_result(variant, clf, X_test, y_test):
             poswl.hit(lab == 1)
         elif min_neg_proba is not None and prob01[0] >= min_neg_proba:
             negwl.hit(lab == 0)
-    profit, pos_profit, neg_profit = 0.0, 0.0, 0.0
-    profit_ratios = variant.profit_ratios
-    if poswl:
-        pos_profit = round(poswl.size * (poswl.ratio - profit_ratios.pos_ratio), 3)
-    if negwl:
-        neg_profit = round(negwl.size * (negwl.ratio - profit_ratios.neg_ratio), 3)
-    profit = pos_profit + neg_profit
     return Result(
         name=variant.name,
         mean=fmt((poswl + negwl).ratio),
@@ -871,8 +845,6 @@ def get_result(variant, clf, X_test, y_test):
         scr=fmt(clf.score(X_test, y_test)),
         poswl=poswl,
         negwl=negwl,
-        profit=profit,
-        pos_profit=pos_profit,
     )
 
 

@@ -1,7 +1,6 @@
+# -*- coding=utf-8 -*-
 import unittest
 
-from loguru import logger as log
-import common as co
 import dba
 from oncourt_players import initialize, players
 

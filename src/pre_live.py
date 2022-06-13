@@ -1,21 +1,25 @@
+# -*- coding=utf-8 -*-
 r"""
 module gives standalone process (prepare data) for matches which soon be live.
 """
 import sys
 import signal
 from typing import Optional
-from common_wdriver import WDriver, wdriver
+from pages.create_page import create_page
+from pages.base import WebPage
+from wdriver import stop_web_driver
 
-_drv: Optional[WDriver] = None
+
+wpage: Optional[WebPage] = None
 
 
 def signal_handler(signal, frame):
     print("\nprogram exiting gracefully after signaled")
-    global _drv
-    if _drv is not None:
-        print("\n_drv stoping...")
-        _drv.stop()
-        _drv = None
+    global wpage
+    if wpage is not None:
+        print("\nwpage stoping...")
+        stop_web_driver(wpage.get_web_driver())
+        wpage = None
     sys.exit(0)
 
 
@@ -46,7 +50,6 @@ from live import (
 )
 from score_company import get_company
 import pre_live_dir
-import after_tie_perf_stat
 from stat_cont import WinLoss
 from report_line import SizedValue
 import atfirst_after
@@ -241,8 +244,6 @@ class MatchDataScript(Script):
             prep_plr_feature("choke")
             prep_plr_feature("absence")
             prep_plr_feature("retired")
-            prep_plr_feature(after_tie_perf_stat.ASPECT_UNDER)
-            prep_plr_feature(after_tie_perf_stat.ASPECT_PRESS)
             prep_plr_feature("pastyear_nmatches")
             prep_plr_sv_feature("sd_tie_ratio")
             prep_advleft_tie_ratio("sd_tie_ratio")
@@ -277,9 +278,9 @@ class MatchDataScript(Script):
 
     def work(self):
         tbeg = time.perf_counter()
-        _drv.live_page_refresh()
+        wpage.refresh()
         events = get_company(args.company_name).fetch_events(
-            webpage=_drv.page(),
+            page_source=wpage.get_page_source(),
             skip_levels=skip_levels_work(),
             match_status=MatchStatus.scheduled,
         )
@@ -354,17 +355,15 @@ def get_min_timer_script(scripts) -> Script:
 
 
 def main(scripts):
-    global _drv
+    global wpage
     company = get_company(args.company_name)
-    _drv = wdriver(company=company, headless=True)
-    _drv.start()
-    _drv.go_live_page()
-    company.initialize_players_cache(_drv.page())
+    wpage = create_page(score_company=company, is_main=True, headless=True)
+    company.initialize_players_cache(wpage.get_page_source())
 
     if not atfirst_after.is_initialized_day(datetime.date.today()):
         atfirst_after.initialize_day(
             company.fetch_events(
-                webpage=_drv.page(),
+                page_source=wpage.get_page_source(),
                 skip_levels=skip_levels_work(),
                 match_status=MatchStatus.scheduled,
             ),
@@ -385,8 +384,8 @@ def main(scripts):
         except co.TennisError as err:
             log.exception(str(err))
             break
-    _drv.stop()
-    _drv = None
+    stop_web_driver(wpage.get_web_driver())
+    wpage = None
 
 
 def make_scripts():

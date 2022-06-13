@@ -1,11 +1,13 @@
+# -*- coding=utf-8 -*-
 """Define some fixtures to use in the project."""
-import os
 import pytest
 
 import dba
 from loguru import logger as log
 from score_company import get_company
-import common_wdriver
+from pages.create_page import create_page
+from pages.tennis24page import MainPageTennis24
+from wdriver import stop_web_driver
 from detailed_score_dbsa import open_db
 
 
@@ -77,19 +79,13 @@ def get_t24_comp():
 
 @pytest.fixture(scope="session")
 def fscore_driver(get_fs_comp):
-    drv = common_wdriver.wdriver(company=get_fs_comp, headless=True)
-    drv.start()
-
-    yield drv
-
-    drv.stop()
+    raise NotImplementedError()
 
 
 @pytest.fixture(scope="session")
-def t24_driver(get_t24_comp):
-    drv = common_wdriver.wdriver(company=get_t24_comp, headless=True)
-    drv.start()
+def t24_driver(get_t24_comp) -> MainPageTennis24:
+    wpage = create_page(score_company=get_t24_comp, is_main=True, headless=False)
 
-    yield drv
+    yield wpage
 
-    drv.stop()
+    stop_web_driver(wpage.get_web_driver())

@@ -1,8 +1,7 @@
+# -*- coding=utf-8 -*-
 import unittest
 
 import dba
-import common as co
-from loguru import logger as log
 import oncourt_players
 from tennis import Player
 from player_name_ident import AbbrName, identify_player
@@ -87,19 +86,7 @@ class AbbrNameTest(unittest.TestCase):
         self.assertTrue(plr is not None)
         if plr is not None:
             self.assertTrue(plr.ident is not None)
-            self.assertEqual(plr.name, "Xin Yu Wang")
-            self.assertEqual(plr.disp_name('betfair'), "Xinyu Wang")
-
-    def test_find_wang_in_oncourt_players(self):
-        plr: Player = co.find_first(
-            self.players_wta,
-            lambda p: p.cou == 'CHN' and p.disp_name("flashscore") == "Wang Xin."
-        )
-        self.assertTrue(plr is not None)
-        if plr is not None:
-            self.assertTrue(plr.ident is not None)
-            self.assertEqual(plr.name, "Xin Yu Wang")
-            self.assertEqual(plr.disp_name('betfair'), "Xinyu Wang")
+            self.assertEqual(plr.name, "Xinyu Wang")
 
     def test_wta_find(self):
         self.assertEqual(
@@ -130,9 +117,6 @@ class AbbrNameTest(unittest.TestCase):
                          'Zhizhen Zhang')
 
     def test_atp_find(self):
-        self.assertEqual(
-            AbbrName("Brinkman N.").find_player(self.players_atp).name, "Nils Brinkman"
-        )
         self.assertEqual(
             AbbrName("De Schepper K.").find_player(self.players_atp).name,
             "Kenny de Schepper",
@@ -184,13 +168,10 @@ class AbbrNameTest(unittest.TestCase):
 
 
 def setUpModule():
-    if not dba.initialized():
-        dba.open_connect()
+    dba.open_connect()
     oncourt_players.initialize()
 
 
 if __name__ == "__main__":
-    if not dba.initialized():
-        dba.open_connect()
     unittest.main()
     dba.close_connect()

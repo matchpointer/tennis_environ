@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from fuzzywuzzy import fuzz
 
 RESEMBLE_MIN_DEGREE = 63

@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import unittest
 
 import common as co
@@ -5,7 +6,6 @@ from stat_cont import (
     Histogram,
     WinLoss,
     HoldStat,
-    AllowBreakPointStat,
     SetOpenerMatchTracker,
     QuadServiceStat,
 )
@@ -85,18 +85,6 @@ class HoldStatTest(unittest.TestCase):
         )  # skip tie
         res_pair = stat1.result_pair(setnum=1, as_float=False)
         self.assertEqual(res_pair, (WinLoss(2, 1), WinLoss(2, 0)))
-
-
-class AllowBreakPointStatTest(unittest.TestCase):
-    def test_continue_bp(self):
-        stat1 = AllowBreakPointStat()
-
-        prev_score = sc.Score("5-2")
-        prev_left_service = False
-        prev_ingame = ("30", "30")
-        ingame = ("40", "30")
-        stat1.continue_current(prev_score, prev_ingame, prev_left_service, ingame)
-        self.assertEqual((0, 1), stat1.get_counts())
 
 
 class TestSetOpener(unittest.TestCase):

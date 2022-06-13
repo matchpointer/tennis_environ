@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 """
     info about lefties taken from: http://tennisabstract.com/reports/leftyRankings.html
 """

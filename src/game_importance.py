@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 
 import common as co
 from detailed_score import point_score_error

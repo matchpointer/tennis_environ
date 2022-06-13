@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import os
 from sys import argv
 import copy
@@ -167,9 +168,6 @@ class Struct(object):
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __str__(self):
         return self.text_sep.join(
@@ -769,9 +767,6 @@ class Position(object):
         if rat is None or rat_other is None:
             return False
         return equal_float(rat, rat_other)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __lt__(self, other):
         return self.ratio() < other.ratio()

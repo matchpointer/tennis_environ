@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 import pandas as pd
 from sklearn.utils.class_weight import compute_sample_weight
 

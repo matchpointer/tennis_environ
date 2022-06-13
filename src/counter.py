@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from collections import defaultdict, OrderedDict, Counter
 from operator import itemgetter
 

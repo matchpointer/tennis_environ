@@ -1,9 +1,9 @@
+# -*- coding=utf-8 -*-
 from collections import defaultdict, namedtuple
 from operator import itemgetter
 import operator
 import re
 import functools
-import unittest
 from typing import Optional, List
 
 from recordclass import recordclass
@@ -114,9 +114,6 @@ class Sumator(object):
         else:
             return self.sum == other.sum and self.count == other.count
 
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
     def __hash__(self):
         return hash((self.sum, self.count))
 
@@ -189,9 +186,6 @@ class WinLoss(object):
         this_sum = self.win_count + self.loss_count
         other_sum = other.win_count + other.loss_count
         return (self.win_count * other_sum) == (other.win_count * this_sum)
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def __lt__(self, other):
         """compare win ratios"""
@@ -295,28 +289,7 @@ class WinLoss(object):
         return WinLoss(win_count=self.loss_count, loss_count=self.win_count)
 
 
-class WinLossTest(unittest.TestCase):
-    def test_compare(self):
-        wl1 = WinLoss.from_text("41.2% (17)")
-        wl2 = WinLoss.from_text("37.8% (339)")
-        self.assertTrue(wl1 > wl2)
-        self.assertTrue(wl2 < wl1)
-        self.assertEqual([wl2, wl1], sorted([wl1, wl2]))
-
-    def test_sum(self):
-        wl1 = WinLoss(7, 3)
-        wl2 = WinLoss(6, 4)
-        wl3 = WinLoss(0, 0)
-        dct = {1: wl1, 2: wl2, 3: wl3}
-        s = sum((dct[i] for i in range(1, 4)), WinLoss())
-        self.assertEqual(wl1 + wl2 + wl3, s)
-
-
-class WinLossPairValue(object):
-    """РґР»СЏ РЅР°РєРѕРїР»РµРЅРёСЏ Р·РЅР°С‡РµРЅРёР№ (value) СЃ СЂР°Р·Р±РёРІРєРѕР№ РЅР° РґРІР° РІР°СЂРёР°РЅС‚Р°:
-    РІС‹РёРіСЂС‹С€ РёР»Рё РїСЂРѕРёРіСЂС‹С€.
-    """
-
+class WinLossPairValue:
     def __init__(self):
         self.winloss = WinLoss()
         self.win_value = Sumator()
@@ -383,39 +356,6 @@ def create_summator_histogram():
 
 def create_winloss_pair_value_histogram():
     return Histogram(WinLossPairValue)
-
-
-class SetsScoreHistogramTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.histos = [
-            Histogram(int, {(2, 0): 5, (2, 1): 3, (1, 2): 1, (0, 2): 2}),
-            Histogram(int, {(2, 0): 6, (2, 1): 4, (1, 2): 2, (0, 2): 3}),
-        ]
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.histos = []
-
-    def test_init_and_sum(self):
-        self.assertEqual(self.histos[0][(2, 0)], 5)
-        self.assertEqual(self.histos[0][(2, 1)], 3)
-        self.assertEqual(self.histos[0][(1, 2)], 1)
-        self.assertEqual(self.histos[0][(0, 2)], 2)
-
-        self.assertEqual(self.histos[1][(2, 0)], 6)
-        self.assertEqual(self.histos[1][(2, 1)], 4)
-        self.assertEqual(self.histos[1][(1, 2)], 2)
-        self.assertEqual(self.histos[1][(0, 2)], 3)
-
-        start_histo = Histogram()
-        sc.complete_sets_score_keys(start_histo)
-        histo = sum(self.histos, start_histo)
-        self.assertEqual(type(histo), Histogram)
-        self.assertEqual(histo[(2, 0)], 11)
-        self.assertEqual(histo[(2, 1)], 7)
-        self.assertEqual(histo[(1, 2)], 3)
-        self.assertEqual(histo[(0, 2)], 5)
 
 
 class QuadServiceStatError(co.TennisError):
@@ -517,31 +457,6 @@ class HoldStat(object):
                 fst_snd[0].hit(prev_left_wingame)
             else:
                 fst_snd[1].hit(not prev_left_wingame)
-
-
-class HoldStatTest(unittest.TestCase):
-    def test_close_previous(self):
-        stat1 = HoldStat()
-        stat1.close_previous(
-            sc.Score("1-1"), prev_left_service=True, prev_left_wingame=True
-        )  # 1/1, 0/0
-        stat1.close_previous(
-            sc.Score("2-1"), prev_left_service=False, prev_left_wingame=False
-        )  # 1/1, 1/1
-        stat1.close_previous(
-            sc.Score("2-2"), prev_left_service=True, prev_left_wingame=False
-        )  # 1/2, 1/1
-        stat1.close_previous(
-            sc.Score("2-3"), prev_left_service=False, prev_left_wingame=False
-        )  # 1/2, 2/2
-        stat1.close_previous(
-            sc.Score("2-4"), prev_left_service=True, prev_left_wingame=True
-        )  # 2/3, 2/2
-        stat1.close_previous(
-            sc.Score("6-6"), prev_left_service=True, prev_left_wingame=False
-        )  # skip tie
-        res_pair = stat1.result_pair(setnum=1, as_float=False)
-        self.assertEqual(res_pair, (WinLoss(2, 1), WinLoss(2, 0)))
 
 
 class MissBigPointStat(object):
@@ -712,90 +627,6 @@ class MissBigPointStat(object):
         return max_where_1 == max_where_2
 
 
-class AllowBreakPointStat:
-    def __init__(self):
-        self.bpcount_from_setnum = defaultdict(lambda: (0, 0))
-
-    def get_compare(self, setnum):
-        from detailed_score_misc import allow_breakpoints_compare
-
-        val_t = self.bpcount_from_setnum[setnum]
-        return allow_breakpoints_compare(val_t[0], val_t[1])
-
-    def tostring(self, setnum=None):
-        fst, snd = self.get_counts(setnum)
-        return "abp{} {}-{}".format("" if setnum is None else str(setnum), fst, snd)
-
-    def get_counts(self, setnum=None):
-        if setnum is not None:
-            return self.bpcount_from_setnum[setnum]
-        fst, snd = 0, 0
-        for sn in self.bpcount_from_setnum:
-            val_t = self.bpcount_from_setnum[sn]
-            fst += val_t[0]
-            snd += val_t[1]
-        return fst, snd
-
-    def _inc_count(self, setnum, left, value):
-        val_t = self.bpcount_from_setnum[setnum]
-        if left:
-            self.bpcount_from_setnum[setnum] = (val_t[0] + value, val_t[1])
-        else:
-            self.bpcount_from_setnum[setnum] = (val_t[0], val_t[1] + value)
-
-    def close_previous(
-        self, prev_left_wingame, prev_score, prev_ingame, prev_left_service
-    ):
-        bpcnt = self.allow_breakpoint_count_at(prev_ingame, prev_left_service)
-        if bpcnt > 0:
-            return  # already counted
-        if prev_left_wingame is not prev_left_service:
-            # service was not hold
-            bpcnt = 1
-            if prev_left_service and prev_ingame == ("0", "30"):
-                bpcnt += 1  # probably was 2 bp
-            elif not prev_left_service and prev_ingame == ("30", "0"):
-                bpcnt += 1  # probably was 2 bp
-        if bpcnt > 0:
-            self._inc_count(setnum=len(prev_score), left=prev_left_service, value=bpcnt)
-
-    def continue_current(self, prev_score, prev_ingame, prev_left_service, ingame):
-        cur_bpcnt = self.allow_breakpoint_count_at(ingame, prev_left_service)
-        if not cur_bpcnt:
-            return
-        prev_bpcnt = self.allow_breakpoint_count_at(prev_ingame, prev_left_service)
-        if not prev_bpcnt:
-            result_cnt = cur_bpcnt
-        else:
-            result_cnt = 0
-            if prev_ingame != ingame and (
-                (prev_left_service and ingame == ("40", "A"))
-                or (not prev_left_service and ingame == ("A", "40"))
-            ):
-                result_cnt = 1
-        if result_cnt > 0:
-            self._inc_count(
-                setnum=len(prev_score), left=prev_left_service, value=result_cnt
-            )
-
-    @staticmethod
-    def allow_breakpoint_count_at(ingame, left_service):
-        num_ingame = sc.ingame_to_num(ingame, tiebreak=False)
-        return sc.num_ingame_breakpoint_count(num_ingame, left_service)
-
-
-class AllowBreakPointStatTest(unittest.TestCase):
-    def test_continue_bp(self):
-        stat1 = AllowBreakPointStat()
-
-        prev_score = sc.Score("5-2")
-        prev_left_service = False
-        prev_ingame = ("30", "30")
-        ingame = ("40", "30")
-        stat1.continue_current(prev_score, prev_ingame, prev_left_service, ingame)
-        self.assertEqual((0, 1), stat1.get_counts())
-
-
 class MatchLastInrow(object):
     def __init__(self):
         # here setnum -> LastInrowCount
@@ -846,36 +677,6 @@ class SetOpenerMatchTracker:
         opener_side = self.get_opener_side(setnum, scr, at)
         if opener_side is not None:
             return opener_side == co.LEFT
-
-
-class TestSetOpener(unittest.TestCase):
-    def test_match_track(self):
-        trk = SetOpenerMatchTracker()
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, None)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, None)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, True)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, True)
-        r = trk.put(setnum=1, scr=(5, 3), is_left_service=True)
-        self.assertEqual(r, True)
-
-        r = trk.put(setnum=2, scr=(0, 0), is_left_service=False)
-        self.assertEqual(r, None)
-
-        r = trk.get_opener_side(setnum=1, scr=(5, 3), at=True)
-        self.assertEqual(r, co.LEFT)
-
-        r = trk.get_opener_side(setnum=1, scr=(5, 3), at=False)
-        self.assertEqual(r, co.RIGHT)
-
-        r = trk.get_opener_side(setnum=1, scr=(5, 4), at=True)
-        self.assertEqual(r, co.RIGHT)
-
-        r = trk.get_opener_side(setnum=1, scr=(0, 0), at=True)
-        self.assertEqual(r, co.LEFT)
 
 
 class SetOpenerHitCounter:
@@ -1306,78 +1107,6 @@ class QuadServiceStat(object):
                         f"prevscore {prev_score} toscore {score} (set is continues)")
 
 
-class QuadServiceStatTest(unittest.TestCase):
-    def test_close_by_right(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("5-1"),
-            prev_ingame=("30", "40"),
-            prev_left_service=False,
-            score=sc.Score("5-2"),
-            ingame=("0", "0"),
-            left_service=True,
-        )
-
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.LEFT))
-
-    def test_close_by_left_then_fresh_right(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("5-1"),
-            prev_ingame=("30", "40"),
-            prev_left_service=False,
-            score=sc.Score("6-1 0-0"),
-            ingame=("0", "40"),
-            left_service=True,
-        )
-        # closing: right broken by 3 points
-        self.assertEqual(WinLoss(0, 2), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-
-        # freshing: left loss 3 points
-        self.assertEqual(WinLoss(0, 2), qstat1.srv_win_loss(co.LEFT, co.ADV))
-        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
-
-    def test_close_by_left_then_fresh_right_tiebreak(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("6-4 5-6"),
-            prev_ingame=("30", "40"),
-            prev_left_service=True,
-            score=sc.Score("6-4 6-6"),
-            ingame=("0", "2"),
-            left_service=True,
-        )
-        # closing: left hold by win 3 points: ADV(2), DEUCE(1)
-        # freshing: right by win 1 point: DEUCE(1)
-        # freshing: left by loss 1 point: ADV(0)
-        self.assertEqual(WinLoss(2, 1), qstat1.srv_win_loss(co.LEFT, co.ADV))
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-
-    def test_close_by_left_then_fresh_left_tiebreak(self):
-        qstat1 = QuadServiceStat()
-        qstat1.update_with(
-            prev_score=sc.Score("6-4 5-6"),
-            prev_ingame=("30", "40"),
-            prev_left_service=True,
-            score=sc.Score("6-4 6-6"),
-            ingame=("2", "0"),
-            left_service=True,
-        )
-        # closing: left hold by win 3 points: ADV(2), DEUCE(1)
-        # freshing: right opener by loss 1 point: DEUCE(0)
-        # freshing: left by win 1 point: ADV(1)
-        self.assertEqual(WinLoss(3, 0), qstat1.srv_win_loss(co.LEFT, co.ADV))
-        self.assertEqual(WinLoss(1, 0), qstat1.srv_win_loss(co.LEFT, co.DEUCE))
-        self.assertEqual(WinLoss(0, 1), qstat1.srv_win_loss(co.RIGHT, co.DEUCE))
-        self.assertEqual(WinLoss(0, 0), qstat1.srv_win_loss(co.RIGHT, co.ADV))
-
-
 class TotalSlices(object):
     def __init__(self):
         self._totcollect_from_key = defaultdict(TotalCollector)
@@ -1651,7 +1380,3 @@ class TotalCollector(object):
 
     def ratio_by_le_23(self):
         return self.ratio_by_le(23)
-
-
-if __name__ == "__main__":
-    unittest.main()

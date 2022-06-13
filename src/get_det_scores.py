@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 """
 access to some concrete scores (for test purposes)
 """

@@ -25,30 +25,6 @@ dict_from_pid: Pid_Key_Counter = defaultdict(
 )
 
 
-def player_total_report_lines(sex, player, total_value, is_less=True, keys=None):
-    import total
-
-    predicate = total.total_predicate(total_value, is_less)
-    if not dict_from_pid:
-        # режим работы 'сегодня' - читаем данные из текущей файловой статистики
-        dirname = cfg_dir.stat_players_total_dir(sex)
-        filename = os.path.join(
-            dirname, "{}.txt".format(player.ident if player else None)
-        )
-        return ReportLineList.create_ratio_from_kcntr_file(filename, predicate)
-    else:
-        assert keys is not None, "None keys in player_total_report_lines given"
-        dct = dict_from_pid[player.ident]
-        items = []
-        for key, cntr in dct.items():
-            if key in keys:
-                sized_ratio = SizedValue.create_ratio_from_cntr(cntr, predicate)
-                items.append(
-                    ReportLine(key=key, value=sized_ratio.value, size=sized_ratio.size)
-                )
-        return ReportLineList(items=items)
-
-
 def find_report_line_in_file(filename, key):
     report_lines = ReportLineList(
         filename=filename, struct_key=isinstance(key, co.StructKey)

@@ -803,7 +803,7 @@ class LiveTourEvent:
         return self.tour_info is not None and self.tour_info.doubles
 
     @property
-    def decided_tiebreak(self) -> Optional[bool]:
+    def decided_tiebreak(self) -> Optional[sc.TieInfo]:
         if self.tour_info is not None:
             return self.tour_info.decided_tiebreak
 

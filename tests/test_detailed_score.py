@@ -570,7 +570,7 @@ class TestDetailedScore:
         )
         assert (
             end_item[1] == DetailedGame(
-                "01000", left_wingame=False, left_opener=True, tiebreak=False),
+                "01000", left_wingame=False, left_opener=True, tiebreak=False)
         )
 
     @staticmethod

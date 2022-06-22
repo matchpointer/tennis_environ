@@ -6,7 +6,6 @@ import copy
 from loguru import logger as log
 import common as co
 import player_name_ident
-import flashscore_match
 
 
 def log_events(events, head="", extended=True, flush=False):
@@ -46,20 +45,6 @@ def events_deep_ident(tour_events, wta_tours, atp_tours, from_scored, warnloghea
             _reident_players(noid_matches, wta_tours, atp_tours)
         warn_cnt = _ident_rnd_date(tour_events, wta_tours, atp_tours, from_scored)
     return warn_cnt
-
-
-def tour_events_parse_detailed_score(tour_events, fsdrv):
-    """suppose that tour_events are already idented (match.rnd, match.date,...)"""
-    n_errors = 0
-    for tour_evt in tour_events:
-        if tour_evt.tour_id is None:
-            continue
-        for match in tour_evt.matches:
-            if match.rnd is not None:
-                res = flashscore_match.parse_match_detailed_score(match, fsdrv)
-                if res is False:
-                    n_errors += 1
-    return n_errors
 
 
 def _ident_tours(tour_events, wta_tours, atp_tours, from_scored):

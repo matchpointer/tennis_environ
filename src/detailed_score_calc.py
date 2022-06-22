@@ -370,7 +370,7 @@ def common_features(sex: str, tour, best_of_five, match: Match) -> FeatureList:
     result.append(RigidFeature("tour_rank", tour.rank))
     result.append(RigidFeature("rnd_text", match.rnd.value))
     result.append(RigidFeature("best_of_five", int(bool(best_of_five))))
-    result.append(RigidFeature("decided_tiebreak", int(match.decided_tiebreak)))
+    result.append(RigidFeature("decided_tiebreak", int(bool(match.decided_tiebreak))))
     result.append(RigidFeature("surface_text", str(tour.surface)))
     result.extend(match.score.features())
     h2h_direct = match.head_to_head.direct()

@@ -1,6 +1,8 @@
 # -*- coding=utf-8 -*-
 import unittest
 
+from tour_name import TourName
+import lev
 from score import (
     tie_opener_serve_at,
     Score,
@@ -8,7 +10,63 @@ from score import (
     prev_game_score,
     score_tail_gap_iter,
     set_tail_gaps,
+    TieInfo,
+    decided_tiebreak,
+    absent_tie_info,
+    default_tie_info,
+    super_tie_66_info,
+    super_tie_1212_info,
 )
+
+
+class DecidedTiebreakInfoTest(unittest.TestCase):
+    def test_wta_gs_maindraw_2022(self):
+        expect_tie_info = super_tie_66_info
+        for name in ('Wimbledon', 'Australian Open', 'French Open', 'U.S. Open'):
+            tie_info = decided_tiebreak(
+                sex='wta', year=2022, tour_name=TourName(name),
+                qualification=False, level=lev.gs, best_of_five=False)
+            self.assertEqual(expect_tie_info, tie_info)
+
+    def test_atp_gs_maindraw_2022(self):
+        expect_tie_info = super_tie_66_info
+        for name in ('Wimbledon', 'Australian Open', 'French Open', 'U.S. Open'):
+            tie_info = decided_tiebreak(
+                sex='atp', year=2022, tour_name=TourName(name),
+                qualification=False, level=lev.gs, best_of_five=True)
+            self.assertEqual(expect_tie_info, tie_info)
+
+    def test_wta_gs_qual_2022(self):
+        expect_tie_info = super_tie_66_info
+        for name in ('Wimbledon', 'Australian Open', 'French Open', 'U.S. Open'):
+            tie_info = decided_tiebreak(
+                sex='wta', year=2022, tour_name=TourName(name),
+                qualification=True, level=lev.gs, best_of_five=False)
+            self.assertEqual(expect_tie_info, tie_info)
+
+    def test_atp_gs_qual_2022(self):
+        expect_tie_info = super_tie_66_info
+        for name in ('Wimbledon', 'Australian Open', 'French Open', 'U.S. Open'):
+            tie_info = decided_tiebreak(
+                sex='atp', year=2022, tour_name=TourName(name),
+                qualification=True, level=lev.gs, best_of_five=True)
+            self.assertEqual(expect_tie_info, tie_info)
+
+    def test_wimbledon_2020_2021(self):
+        # wimbledon_2020 was skiped by pandemia
+        expect_tie_info = TieInfo(beg_scr=(12, 12), is_super=False)
+        tname = TourName(name='Wimbledon')
+        year_list = [2020, 2021]
+        isqual_list = [True, False]
+        sex_list = ['wta', 'atp']
+        for year in year_list:
+            for isqual in isqual_list:
+                for sex in sex_list:
+                    best_of_five = (sex == 'atp') and (not isqual)
+                    tie_info = decided_tiebreak(
+                        sex=sex, year=year, tour_name=tname,
+                        qualification=isqual, level=lev.gs, best_of_five=best_of_five)
+                    self.assertEqual(expect_tie_info, tie_info)
 
 
 class TieWhoServeTest(unittest.TestCase):

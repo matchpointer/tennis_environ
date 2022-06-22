@@ -75,9 +75,10 @@ class TourInfo:
         return result
 
     @property
-    def decided_tiebreak(self) -> Optional[bool]:
+    def decided_tiebreak(self) -> Optional[sc.TieInfo]:
         return sc.decided_tiebreak(
-            self.sex, datetime.date.today().year, self.tour_name, self.qualification
+            self.sex, datetime.date.today().year, self.tour_name,
+            self.qualification, self.level
         )
 
     def dates_range_for_query(self, match_date):

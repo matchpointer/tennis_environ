@@ -273,7 +273,7 @@ class Match:
         self.head_to_head = None
         self.stat = None
         self.offer = bet.Offer(bet.get_pinnacle_company())
-        self.decided_tiebreak_info = None
+        self._decided_tiebreak: Optional[sc.TieInfo] = None
         self.set_items = None  # here may be Dict[int, SetItems]
 
     def flip(self):
@@ -307,7 +307,7 @@ class Match:
                 )
                 return False
             else:
-                self.decided_tiebreak_info = dectieinfo
+                self._decided_tiebreak = dectieinfo
                 self.score = score
                 return True
         except co.TennisScoreSuperTieError as err:
@@ -315,9 +315,8 @@ class Match:
             return False
 
     @property
-    def decided_tiebreak(self):
-        if self.decided_tiebreak_info is not None:
-            return self.decided_tiebreak_info.beg_scr is not None
+    def decided_tiebreak(self) -> Optional[sc.TieInfo]:
+        return self._decided_tiebreak
 
     def paired(self):
         result = None

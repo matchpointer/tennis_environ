@@ -200,9 +200,10 @@ class LiveMatch(Match):
             return self.live_event.qualification
 
     @property
-    def decided_tiebreak(self):
-        if self.decided_tiebreak_info is not None:
-            return self.decided_tiebreak_info.beg_scr is not None
+    def decided_tiebreak(self) -> Optional[sc.TieInfo]:
+        result = super().decided_tiebreak
+        if result is not None:
+            return result
         return self.live_event.decided_tiebreak
 
     def paired(self):

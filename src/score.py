@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Tuple, List, Optional, TYPE_CHECKING
 
 from side import Side
+import lev
 import common as co
 from loguru import logger as log
 import feature
@@ -980,53 +981,9 @@ def score_tail_gap_iter(start_score, end_score, left_semiopen=False):
         n_beg_eq += 1
 
 
-def decided_tiebreak(
-    sex, year, tour_name, qualification, level=None, best_of_five=None
-) -> Optional[bool]:
-    def ao_wildcard_tiebreak():
-        if (sex == "wta" and year >= 2017) or (sex == "atp" and year >= 2018):
-            return True
-        return False
-
-    if tour_name is None:
-        return None
-
-    if "wildcard" in tour_name and "australian-open" in tour_name:
-        return ao_wildcard_tiebreak()
-    if "olympics" in tour_name:
-        return year >= 2016
-
-    if qualification is None:
-        return None
-
-    if "wimbledon" in tour_name:
-        if qualification:
-            return False
-        return year >= 2019 if sex == "atp" else False
-    elif "french-open" in tour_name:
-        return (year >= 2017 and qualification) or year >= 2022
-    elif "australian-open" in tour_name:
-        if year >= 2019:
-            return True
-        if sex == "wta":
-            return year >= 2018 and qualification
-        elif sex == "atp":
-            return year >= 2017 and qualification
-        else:
-            return None
-    elif level == "teamworld" and sex == "atp":
-        if best_of_five is False:
-            return True  # если команда winner уже известна, то формат сокращается (std)
-        if best_of_five is None:
-            return None
-        return year >= 2016
-    elif level == "teamworld" and sex == "wta" and year <= 2017:
-        return False
-    else:
-        return True
-
-
 class TieInfo:
+    __slots__ = ('beg_scr', 'is_super')
+
     def __init__(self, beg_scr, is_super: bool):
         #  beg_scr - score in dec set (sample: (6, 6)) when starts tiebreak (if exist)
         self.beg_scr = beg_scr
@@ -1060,45 +1017,92 @@ class TieInfo:
             and max(*dec_set) > 13
         )
 
-    def __str__(self):
+    def __bool__(self):
+        return self.beg_scr is not None
+
+    def __eq__(self, other):
+        return self.beg_scr == other.beg_scr and self.is_super == other.is_super
+
+    def __repr__(self):
         return "beg:{} super:{}".format(self.beg_scr, int(self.is_super))
 
 
-absent_tie_info = TieInfo(beg_scr=None, is_super=False)
+absent_tie_info = TieInfo(beg_scr=None, is_super=False)  # for win by advantage set
 default_tie_info = TieInfo(beg_scr=(6, 6), is_super=False)
+super_tie_66_info = TieInfo(beg_scr=(6, 6), is_super=True)
+super_tie_1212_info = TieInfo(beg_scr=(12, 12), is_super=True)
 
 
-def get_decided_tiebreak_info(
+def decided_tiebreak(
     sex, year, tour_name, qualification, level=None, best_of_five=None, money=None
-):
-    """return TieInfo"""
-    is_tiebreak = decided_tiebreak(
-        sex, year, tour_name, qualification, level=level, best_of_five=best_of_five
-    )
-    if is_tiebreak is False:
-        return absent_tie_info
-    elif is_tiebreak is None:
-        return default_tie_info
+) -> Optional[TieInfo]:
+    def ao_wildcard_tiebreak():
+        if (sex == "wta" and year >= 2017) or (sex == "atp" and year >= 2018):
+            return True
+        return False
 
-    if year >= 2022 and "french-open" in tour_name:
-        return TieInfo(beg_scr=(6, 6), is_super=True)
-    if year >= 2019:
-        if "australian-open" in tour_name:
-            return TieInfo(beg_scr=(6, 6), is_super=True)
-        if "wimbledon" in tour_name:
+    if year >= 2022 and level == lev.gs:
+        return super_tie_66_info
+    if tour_name is not None and 'us-open' in tour_name:
+        return default_tie_info
+    if tour_name is None:
+        return None
+
+    if "wildcard" in tour_name and "australian-open" in tour_name:
+        return default_tie_info if ao_wildcard_tiebreak() else absent_tie_info
+    if "olympics" in tour_name:
+        return default_tie_info if year >= 2016 else absent_tie_info
+
+    if qualification is None:
+        return None
+
+    if "wimbledon" in tour_name:
+        if year >= 2022:
+            return super_tie_66_info
+        elif year >= 2019:
             return TieInfo(beg_scr=(12, 12), is_super=False)
-        if sex == "wta" and qualification:
-            if (
-                level == "future"
-                or (level == "chal" and money is not None and money < 115000)
-                # (level == 'chal' and  # except which are 115K money:
-                #  'Newport Beach' not in tour_name and
-                #  'Indian Wells' not in tour_name and
-                #  'Anning' not in tour_name and
-                #  'Guadalajara' not in tour_name)
-            ):
-                return TieInfo(beg_scr=(0, 0), is_super=True)
-    return default_tie_info
+        return absent_tie_info
+
+    elif "french-open" in tour_name:
+        if year >= 2022:
+            return super_tie_66_info
+        if year <= 2016:
+            return absent_tie_info
+        if year >= 2017 and qualification:
+            return default_tie_info
+        return absent_tie_info
+
+    elif "australian-open" in tour_name:
+        if year >= 2019:
+            return super_tie_66_info
+        if year <= 2016:
+            return absent_tie_info
+        if (
+            (sex == "wta" and year >= 2018 and qualification)
+            or (sex == "atp" and year >= 2019 and qualification)
+        ):
+            return default_tie_info
+        return absent_tie_info
+
+    elif sex == "wta" and qualification and level != lev.gs:
+        if (
+            level == "future"
+            or (level == "chal" and money is not None and money < 115000)
+        ):
+            return TieInfo(beg_scr=(0, 0), is_super=True)
+
+    elif level == "teamworld" and sex == "atp":
+        if best_of_five is None:
+            return None
+        elif best_of_five is False:
+            # если команда winner уже известна, то формат сокращается (std)
+            return default_tie_info
+        return default_tie_info if year >= 2016 else absent_tie_info
+
+    elif level == "teamworld" and sex == "wta" and year <= 2017:
+        return absent_tie_info
+    else:
+        return default_tie_info
 
 
 def get_decided_tiebreak_info_ext(
@@ -1127,11 +1131,11 @@ def get_decided_tiebreak_info_ext(
         and is_dec_supertie_scr(dec_set, score.retired)
     ):
         is_dec_supertie_scr_lowrank = True
-    dec_tie_fmt = get_decided_tiebreak_info(
+    dec_tie_fmt = decided_tiebreak(
         tour.sex,
         tour.date.year,
         tour.name,
-        rnd.qualification(),
+        qualification=rnd.qualification(),
         level=tour.level,
         best_of_five=best_of_five,
         money=tour.money,

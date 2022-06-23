@@ -1,13 +1,17 @@
 # -*- coding=utf-8 -*-
 """
-    info about lefties taken from: http://tennisabstract.com/reports/leftyRankings.html
+gives additional info (is_lefty, display_name in tennis24.com,...)
+about actual players in oncourt db.
+This additional info storaged in json filename given by dict_filename(sex)
+
+info about lefties taken from: http://tennisabstract.com/reports/leftyRankings.html
 """
 
 from collections import defaultdict
 import datetime
 from contextlib import closing
 import argparse
-from typing import DefaultDict, Set, List
+from typing import DefaultDict, List
 
 import csv
 
@@ -15,7 +19,7 @@ from loguru import logger as log
 import cfg_dir
 import common as co
 import tennis_time as tt
-import dba
+from oncourt import dba
 import tennis
 import file_utils as fu
 
@@ -43,14 +47,14 @@ def initialize(sex=None, yearsnum=2):
         read_players_from_db(sex, __players_from_sex[sex], min_date, dct)
 
 
-def players(sex):
+def get_players(sex):
     """loaded players"""
     return __players_from_sex[sex]
 
 
 def get_player(sex, pid):
     """convenient for debugs/tests/experiments"""
-    return co.find_first(players(sex), lambda p: p.ident == pid)
+    return co.find_first(get_players(sex), lambda p: p.ident == pid)
 
 
 def read_players_from_db(sex, players_set, min_date, players_ext_dct):
@@ -118,7 +122,7 @@ def write_actual_players(sex, yearsnum=1.8):
     dba.open_connect()
     initialize(sex, yearsnum=yearsnum)
     with open(_actual_players_filename(sex), "w") as fh:
-        fh.write(",".join([str(p.ident) for p in players(sex)]))
+        fh.write(",".join([str(p.ident) for p in get_players(sex)]))
     dba.close_connect()
 
 

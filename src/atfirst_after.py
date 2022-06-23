@@ -14,7 +14,7 @@ import cfg_dir
 import common as co
 import file_utils as fu
 import score as sc
-import dba
+from oncourt import dba
 import feature
 
 

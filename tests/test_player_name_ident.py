@@ -1,16 +1,15 @@
 # -*- coding=utf-8 -*-
 import unittest
 
-import dba
-import oncourt_players
+from oncourt import dba, extplayers
 from tennis import Player
 from player_name_ident import AbbrName, identify_player
 
 
 class AbbrNameTest(unittest.TestCase):
     def setUp(self):
-        self.players_wta = oncourt_players.players("wta")
-        self.players_atp = oncourt_players.players("atp")
+        self.players_wta = extplayers.get_players("wta")
+        self.players_atp = extplayers.get_players("atp")
 
     def test_find(self):
         players = [
@@ -169,7 +168,7 @@ class AbbrNameTest(unittest.TestCase):
 
 def setUpModule():
     dba.open_connect()
-    oncourt_players.initialize()
+    extplayers.initialize()
 
 
 if __name__ == "__main__":

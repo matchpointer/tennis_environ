@@ -14,8 +14,7 @@ import file_utils as fu
 from stat_cont import WinLoss, Sumator
 import report_line as rl
 import dict_tools
-import dba
-import oncourt_players
+from oncourt import dba, extplayers
 import matchstat
 import score as sc
 import feature
@@ -233,7 +232,7 @@ class DecidedSetPlayersProcessor(object):
     def __init__(self, sex):
         self.dec_sets_from_player = defaultdict(WinLoss)
         self.sex = sex
-        self.actual_players = oncourt_players.players(sex)
+        self.actual_players = extplayers.get_players(sex)
 
     def process(self, tour):
         for rnd, matches in tour.matches_from_rnd.items():
@@ -290,7 +289,7 @@ def process_sex(sex):
 def do_stat(sex=None):
     try:
         dba.open_connect()
-        oncourt_players.initialize()
+        extplayers.initialize()
 
         log.info(__file__ + " begining for stat with sex: " + str(sex))
         start_datetime = datetime.datetime.now()

@@ -2,12 +2,11 @@
 import unittest
 import datetime
 
-from loguru import logger as log
 import common as co
 import tennis_time as tt
 import weeked_tours
 from last_results import LastResults
-from surf import Clay, Hard, Carpet
+from surf import Clay, Hard
 
 
 class WinstreakAdvTest(unittest.TestCase):
@@ -98,11 +97,11 @@ class PlayerTodayLastresCaseTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import oncourt_players
-        import dba
+        from oncourt import extplayers
+        from oncourt import dba
 
         dba.open_connect()
-        oncourt_players.initialize(yearsnum=1.2)
+        extplayers.initialize(yearsnum=1.2)
 
         date = tt.past_monday_date(datetime.date.today())
 

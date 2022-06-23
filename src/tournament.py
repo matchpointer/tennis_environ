@@ -9,8 +9,7 @@ import common as co
 from loguru import logger as log
 import file_utils as fu
 from surf import make_surf
-import dba
-import oncourt_db
+from oncourt import dba, read_db_helper
 import qual_seeds
 import tennis_time as tt
 import score as sc
@@ -60,10 +59,10 @@ class Tournament:
         self.ident = ident
         self.sex = sex
         self.surface = surface
-        self.money = oncourt_db.get_money(money)
+        self.money = read_db_helper.get_money(money)
         self.rank = None if rank is None else int(rank)
         self.date = Tournament.endyear_date_correction(date)
-        self.raw_name, self.level = oncourt_db.get_name_level(
+        self.raw_name, self.level = read_db_helper.get_name_level(
             sex, name.strip(), self.rank, self.money, self.date
         )
         self.cou = cou.strip()
@@ -410,10 +409,10 @@ class SqlBuilder:
 
     def build(self):
         result = (
-            self.select_clause(mix=False)
-            + self.from_clause(mix=False)
-            + self.where_clause()
-            + dba.sql_dates_condition(self.min_date, self.max_date)
+                self.select_clause(mix=False)
+                + self.from_clause(mix=False)
+                + self.where_clause()
+                + dba.sql_dates_condition(self.min_date, self.max_date)
         )
         if self.with_mix:
             result += (

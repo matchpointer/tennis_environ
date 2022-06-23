@@ -1,9 +1,7 @@
 # -*- coding=utf-8 -*-
 import unittest
 
-from loguru import logger as log
-import common as co
-import dba
+from oncourt import dba
 from decided_win_by_two_sets_stat import ENABLE_SOFT_LEVELS, read_scores_dict
 
 

@@ -16,7 +16,7 @@ from loguru import logger as log
 
 import common as co
 import lev
-import oncourt_players
+from oncourt import extplayers
 from surf import make_surf, Hard, Carpet
 import tennis_time as tt
 import player_name_ident
@@ -31,7 +31,7 @@ from live import (
     skip_levels_work,
 )
 from live_tourinfo import TourInfo, TourInfoCache
-from oncourt_db import MAX_WTA_FUTURE_MONEY
+from oncourt.read_db_helper import MAX_WTA_FUTURE_MONEY
 from geo import city_in_europe
 from tour_name import TourName, tourname_number_split
 
@@ -289,7 +289,7 @@ def _find_player(sex: str, disp_name: str, cou: str):
         return plr
     else:
         return co.find_first(
-            oncourt_players.players(sex),
+            extplayers.get_players(sex),
             lambda p: p.cou == cou and p.disp_name("flashscore") == disp_name,
         )
 

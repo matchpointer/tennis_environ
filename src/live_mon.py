@@ -21,16 +21,14 @@ from requests.exceptions import RequestException
 import clf_decided_00dog_apply
 import stopwatch
 
-import common as co
 from loguru import logger as log
 import cfg_dir
 import config_personal
 import ratings
 import tennis_time as tt
 import bet_coefs
-import dba
+from oncourt import dba, extplayers
 import sms_svc
-import oncourt_players
 from pages.create_page import create_page
 from wdriver import stop_web_driver
 from score_company import get_company, ScoreCompany
@@ -501,7 +499,7 @@ def main():
     if args.betfair:
         betfair_client.initialize()
     dba.open_connect()
-    oncourt_players.initialize(yearsnum=1.2)
+    extplayers.initialize(yearsnum=1.2)
     ratings.initialize(
         sex=None,
         rtg_names=("std", "elo"),

@@ -5,7 +5,7 @@ from typing import Tuple, Optional, DefaultDict
 import datetime
 
 import common as co
-import dba
+from oncourt import dba
 
 """ access to oncourt ratings (since 2003.01.06)
 """

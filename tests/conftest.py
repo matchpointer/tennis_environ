@@ -2,7 +2,7 @@
 """Define some fixtures to use in the project."""
 import pytest
 
-import dba
+from oncourt import dba
 from loguru import logger as log
 from score_company import get_company
 from pages.create_page import create_page

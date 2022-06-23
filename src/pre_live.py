@@ -37,8 +37,7 @@ import common as co
 import feature
 import tennis_time as tt
 import bet_coefs
-import dba
-import oncourt_players
+from oncourt import dba, automate, extplayers
 import matchstat
 import ratings
 import decided_set
@@ -56,7 +55,7 @@ import atfirst_after
 import advantage_tie_ratio
 
 try:
-    import automate
+    pass
 except ImportError:
     automate = None
 
@@ -450,7 +449,7 @@ if __name__ == "__main__":
     args = parse_command_line_args()
     log.info("started with company_name {}".format(args.company_name))
     dba.open_connect()
-    oncourt_players.initialize(yearsnum=1.2)
+    extplayers.initialize(yearsnum=1.2)
     ratings.initialize(
         sex=None,
         rtg_names=("std", "elo"),

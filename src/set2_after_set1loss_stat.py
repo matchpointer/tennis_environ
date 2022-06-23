@@ -17,9 +17,8 @@ import report_line as rl
 import dict_tools
 import stat_cont as st
 import score as sc
-import oncourt_players
 import tennis_time as tt
-import dba
+from oncourt import dba, extplayers
 import ratings_std
 import feature
 import matchstat
@@ -283,7 +282,7 @@ class StatMaker(object):
         self.sex = sex
         self.min_size = min_size
         self.max_size = max_size
-        self.actual_players = oncourt_players.players(sex)
+        self.actual_players = extplayers.get_players(sex)
         self.plr_val = []
 
     def process_all(self, aspect):
@@ -368,7 +367,7 @@ def do_stat():
         )
         log.info(__file__ + " started {}".format(msg))
         dba.open_connect()
-        oncourt_players.initialize(yearsnum=8)
+        extplayers.initialize(yearsnum=8)
         min_date = tt.now_minus_history_days(history_days_personal(args.sex))
         ratings_std.initialize(
             sex=args.sex, min_date=min_date - datetime.timedelta(days=7)

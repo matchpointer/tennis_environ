@@ -6,7 +6,7 @@ from collections import defaultdict
 import pytest
 
 from loguru import logger as log
-import oncourt_players
+from oncourt import extplayers
 import tennis_time as tt
 import tournament_misc as trmt_misc
 import weeked_tours
@@ -32,7 +32,7 @@ skip_levels = get_skip_levels(restrict=False)
 def prep_t24_company_page(get_dba, get_t24_comp, t24_driver):
     log.add(f"../log/{os.path.basename(__file__).replace('.py', '.log')}",
             level='INFO')
-    oncourt_players.initialize(yearsnum=1.2)
+    extplayers.initialize(yearsnum=1.2)
     min_date = tt.past_monday_date(datetime.date.today()) - datetime.timedelta(days=7)
     weeked_tours.initialize_sex(
         "wta", min_date=min_date, max_date=None, with_today=True, with_bets=True)

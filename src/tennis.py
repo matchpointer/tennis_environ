@@ -7,15 +7,13 @@ from typing import Optional, Dict
 
 import common as co
 from loguru import logger as log
-import dba
+from oncourt import dba, extplayers
 import tennis_time as tt
 from surf import make_surf
 import score as sc
 import ratings
 import bet
 import bet_coefs
-import oncourt_players
-import stat_cont as st
 
 
 @functools.total_ordering
@@ -233,7 +231,7 @@ class Player:
         if self.ident is None:
             return
         player = co.find_first(
-            oncourt_players.players(sex), lambda p: p.ident == self.ident
+            extplayers.get_players(sex), lambda p: p.ident == self.ident
         )
         if player is not None:
             self.lefty = player.lefty

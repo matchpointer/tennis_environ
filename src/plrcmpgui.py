@@ -13,10 +13,9 @@ from surf import make_surf
 import score as sc
 import tennis
 import cfg_dir
-import dba
+from oncourt import dba, extplayers
 import stat_cont as st
 import dict_tools
-import oncourt_players
 import matchstat
 import decided_set
 import set2_after_set1loss_stat
@@ -855,13 +854,13 @@ def main():
     try:
         args = parse_command_line_args()
         dba.open_connect()
-        oncourt_players.initialize()
+        extplayers.initialize()
         ratings.initialize("wta", rtg_names=("elo",))
         ratings.initialize("atp", rtg_names=("elo",))
         ratings.Rating.register_rtg_name("elo_alt")
         app = Application(
-            wta_players=oncourt_players.players("wta"),
-            atp_players=oncourt_players.players("atp"),
+            wta_players=extplayers.get_players("wta"),
+            atp_players=extplayers.get_players("atp"),
         )
         app.master.title("Live")
         app.mainloop()

@@ -6,11 +6,10 @@ import argparse
 from loguru import logger as log
 import tournament as trmt
 import tennis_time as tt
-import dba
+from oncourt import dba, extplayers
 import ratings_std
 
 import qual_seeds
-import oncourt_players
 
 import matchstat
 import pandemia
@@ -124,7 +123,7 @@ def do_stat():
         dba.open_connect()
         ratings_std.initialize(sex=args.sex)
         qual_seeds.initialize()
-        oncourt_players.initialize(yearsnum=18)
+        extplayers.initialize(yearsnum=18)
 
         matchstat_process(sex=args.sex)
 

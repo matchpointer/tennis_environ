@@ -3,7 +3,7 @@ import re
 
 import common as co
 from loguru import logger as log
-import oncourt_players
+from oncourt import extplayers
 import words
 
 _COMPANY_KEY = "flashscore"
@@ -12,18 +12,18 @@ _COMPANY_KEY = "flashscore"
 def identify_player(sex, player_short_name, cou=None):
     if cou is None:
         player = co.find_first(
-            oncourt_players.players(sex),
+            extplayers.get_players(sex),
             lambda p: p.disp_name(_COMPANY_KEY) == player_short_name,
         )
     else:
         player = co.find_first(
-            oncourt_players.players(sex),
+            extplayers.get_players(sex),
             lambda p: p.cou == cou and p.disp_name(_COMPANY_KEY) == player_short_name,
         )
     if player is not None:
         return player
     abbrname = AbbrName(player_short_name)
-    return abbrname.find_player(oncourt_players.players(sex), sex)
+    return abbrname.find_player(extplayers.get_players(sex), sex)
 
 
 class AbbrName:

@@ -1,8 +1,8 @@
 # -*- coding=utf-8 -*-
 import unittest
 
-import dba
-from oncourt_players import initialize, players
+from oncourt import dba
+from oncourt.extplayers import initialize, get_players
 
 
 class UnitTests(unittest.TestCase):
@@ -12,17 +12,17 @@ class UnitTests(unittest.TestCase):
         initialize(yearsnum=8)
 
     def test_min_players(self):
-        plrs = players("atp")
+        plrs = get_players("atp")
         self.assertGreaterEqual(len(plrs), 1000)
 
     def test_wta_count_hand_players(self):
-        plrs = players("wta")
+        plrs = get_players("wta")
         cnt = sum([1 for p in plrs if p.lefty is not None])
         print(f"wta n_hand={cnt}")
         self.assertTrue(cnt >= 400)
 
     def test_wta_kerber_lefty(self):
-        plrs = players("wta")
+        plrs = get_players("wta")
         results = [p for p in plrs if p.ident == 4076]
         self.assertEqual(len(results), 1)
         if len(results) == 1:
@@ -31,7 +31,7 @@ class UnitTests(unittest.TestCase):
             self.assertTrue(kerber.lefty)
 
     def test_atp_exist_lefty_player(self):
-        plrs = players("atp")
+        plrs = get_players("atp")
         lefty_cnt = sum([1 for p in plrs if p.lefty])
         self.assertTrue(lefty_cnt >= 5)
         our_plrs = [p for p in plrs if p.name == "Gerald Melzer" and p.cou == "AUT"]

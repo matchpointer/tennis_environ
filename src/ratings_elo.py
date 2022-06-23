@@ -9,9 +9,8 @@ from recordclass import recordclass
 
 import file_utils as fu
 import cfg_dir
-import dba
+from oncourt import dba, read_db_helper, extplayers
 from loguru import logger as log
-import oncourt_players
 import tennis_time as tt
 from score import is_dec_supertie_scr
 import feature
@@ -86,7 +85,7 @@ def _init_ranks(sex=None, isalt=False):
     rank_dct = rank_dict(isalt)
     sexes = ("wta", "atp") if sex is None else (sex,)
     for sex in sexes:
-        actual_pids = oncourt_players.actual_players_id(sex)
+        actual_pids = extplayers.actual_players_id(sex)
         for surface in _surface_keys:
             if isalt:
                 pid_pts_list = [
@@ -109,11 +108,10 @@ def make_files(sex, max_date=None, is_actual_players=True):
     """ write out json files. For each player: 'key_id': [elo_val, elo_alt_val, size]
         for surface file write analogic data with respect surface.
     """
-    import oncourt_db
 
     clear(sex)
     min_date = (
-        oncourt_db.MIN_WTA_TOUR_DATE if sex == "wta" else oncourt_db.MIN_ATP_TOUR_DATE
+        read_db_helper.MIN_WTA_TOUR_DATE if sex == "wta" else read_db_helper.MIN_ATP_TOUR_DATE
     )
     if max_date is None:
         max_date = datetime.date.today()
@@ -304,7 +302,7 @@ def clear(sex: str):
 
 def get_top_ordered(sex: str, surface="all", top=100, isalt=False):
     """:returns [(player_id, elo_points, n_matches_played)]"""
-    act_plr_ids = oncourt_players.actual_players_id(sex)
+    act_plr_ids = extplayers.actual_players_id(sex)
     if isalt:
         lst = [
             (pid, alt_pts, n_m)
@@ -351,7 +349,7 @@ def _last_file_date(sex: str, surface="all"):
 def dump_json(sex: str, filename: str, surface="all", is_actual_players=False):
     indct = _sex_surf_dict[(sex, str(surface))]
     if is_actual_players:
-        act_pids = oncourt_players.actual_players_id(sex)
+        act_pids = extplayers.actual_players_id(sex)
         dct = {
             k: (v.elo_pts, v.elo_alt_pts, v.n_matches)
             for k, v in indct.items()

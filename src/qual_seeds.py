@@ -2,7 +2,7 @@ import collections
 from contextlib import closing
 from typing import List, Dict
 
-import dba
+from oncourt import dba
 
 # {tour_id -> List[player_id]}
 __wta_quals_from_tid: Dict[int, List[int]] = collections.defaultdict(list)

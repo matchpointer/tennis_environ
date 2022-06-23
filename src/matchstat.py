@@ -8,7 +8,7 @@ from typing import Dict, Tuple, Optional, DefaultDict
 
 import tkinter.ttk
 
-import dba
+from oncourt import dba, extplayers
 import common as co
 import tennis_time as tt
 from loguru import logger as log
@@ -17,7 +17,6 @@ from stat_cont import create_summator_histogram, WinLoss, Sumator
 import cfg_dir
 from tennis import Round
 from lev import soft_level
-import oncourt_players
 import dict_tools
 from report_line import SizedValue
 from bet import get_betcity_company, PickWin
@@ -887,7 +886,7 @@ class MatchStatPersonalProcessor(object):
         self.history_days = history_days_personal(short=short_history)
         self.min_date = tt.now_minus_history_days(self.history_days)
         self.histo_from_player = defaultdict(create_summator_histogram)
-        self.actual_players = oncourt_players.players(sex)
+        self.actual_players = extplayers.get_players(sex)
 
     def process(self, tour):
         if tour.level.junior or tour.date < self.min_date:

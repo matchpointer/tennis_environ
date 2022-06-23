@@ -14,9 +14,8 @@ import lev
 import stat_cont as st
 import score as sc
 import tennis
-import oncourt_db
 import tennis_time as tt
-import dba
+from oncourt import dba, read_db_helper
 import ratings_std
 import feature
 from clf_common import RANK_STD_BOTH_ABOVE, RANK_STD_MAX_DIF
@@ -170,7 +169,7 @@ def _fill_results_sex(
             set3_score = scr[2]
             if set3_score[0] < set3_score[1]:
                 raise co.TennisScoreError("right winner unexpected {}".format(scr))
-            money = oncourt_db.get_money(db_money)
+            money = read_db_helper.get_money(db_money)
             rank = None if db_rank is None else int(db_rank)
             if rank is None:
                 log.error(
@@ -182,7 +181,7 @@ def _fill_results_sex(
                         rank, date, scr, tour_name
                     )
                 )
-            rawname, level = oncourt_db.get_name_level(
+            rawname, level = read_db_helper.get_name_level(
                 sex, tour_name.strip(), rank, money, date
             )
             if level in DISABLE_LEVELS:

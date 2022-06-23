@@ -3,9 +3,7 @@ import unittest
 import datetime
 import copy
 
-from loguru import logger as log
-import common as co
-import dba
+from oncourt import dba
 from decided_set import player_winloss, initialize_results, results_dict
 
 

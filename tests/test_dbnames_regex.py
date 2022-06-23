@@ -1,7 +1,7 @@
 # -*- coding=utf-8 -*-
 import unittest
 
-from oncourt_db import (
+from oncourt.read_db_helper import (
     remove_middle_cap_item_len2,
     _atp_name_future_level,
     ATP_COU_FUTURE_PREF_RE,

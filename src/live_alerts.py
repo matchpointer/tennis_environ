@@ -20,7 +20,7 @@ from score import setidx_by_name
 from live import LiveMatch
 
 import feature
-import predicts_db
+from predicts_db import predicts_db_usage
 
 
 def remain_soft_main_skip_cond(match):
@@ -273,7 +273,7 @@ class AlertSetDecidedWinDogFavClf(AlertSetDecided):
             reject = allow_res.exist_comment(self.common_rejectables)
             main_comment = 'backdog' if back_dog else 'backfav'
             if reject:
-                predicts_db.write_rejected(
+                predicts_db_usage.write_rejected(
                     match, self.case_name(match), back_side, reason=str(allow_res))
                 log.info(f"{self.__class__.__name__} {match.name}"
                          f" reject our {back_side} {main_comment} {str(allow_res)}")
@@ -325,7 +325,7 @@ class AlertSetDecidedWinNodogClf(AlertSetDecided):
                  'retired', 'blacklist', 'change_surf', 'last_results',
                  'pastyear_nmatches'))
             if reject:
-                predicts_db.write_rejected(
+                predicts_db_usage.write_rejected(
                     match, self.case_name(match), back_side, reason=comment)
                 log.info(f"{self.__class__.__name__} {match.name}"
                          f" reject our {back_side} {comment}")

@@ -8,56 +8,56 @@ from typing import List
 
 from sqlalchemy import create_engine
 from sqlalchemy.sql import text
-from sqlalchemy.orm import mapper, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy import (
-    Table,
     Column,
     Integer,
-    Enum as DbEnum,
     String,
     Float,
-    MetaData,
     Date,
     PrimaryKeyConstraint,
 )
+from sqlalchemy.ext.declarative import declarative_base
+
 
 import cfg_dir
 import common as co
 
 
-metadata = MetaData()
-
-
 MAX_COMMENTS_LEN = 36
 
-predicts_table = Table(
-    "predicts",
-    metadata,
-    Column("sex", String(4)),
-    Column("date", Date, index=True),
-    Column("case_name", String(24)),
-    Column("tour_name", String(36)),
-    Column("level", String(16)),
-    Column("surface", String(16)),
-    Column("rnd", String(16)),
-    Column("back_id", Integer),
-    Column("oppo_id", Integer),
-    Column("predict_proba", Float),
-    Column("predict_result", Integer),
-    Column("comments", String(MAX_COMMENTS_LEN)),
-    Column("back_name", String(40)),
-    Column("oppo_name", String(40)),
-    Column("book_start_chance", Float),
-    Column("rejected", Integer),
-    Column("back_win_match", Integer),
-    Column("bf_live_coef", Float),
-    Column("bf_live_coef_matched", Float),
-    Column("clf_hash", String(50)),
-    PrimaryKeyConstraint("sex", "date", "case_name", "rnd", "back_id", "oppo_id"),
-)
+Base = declarative_base()
 
 
-class PredictRec:
+class Predict(Base):
+    __tablename__ = 'predicts'
+
+    rowid = Column(Integer, primary_key=True)
+    sex = Column("sex", String(4))
+    date = Column("date", Date, index=True)
+    case_name = Column("case_name", String(24))
+    tour_name = Column("tour_name", String(36))
+    level = Column("level", String(16))
+    surface = Column("surface", String(16))
+    rnd = Column("rnd", String(16))
+    back_id = Column("back_id", Integer)
+    oppo_id = Column("oppo_id", Integer)
+    predict_proba = Column("predict_proba", Float)
+    predict_result = Column("predict_result", Integer)
+    comments = Column("comments", String(MAX_COMMENTS_LEN))
+    back_name = Column("back_name", String(40))
+    oppo_name = Column("oppo_name", String(40))
+    book_start_chance = Column("book_start_chance", Float)
+    rejected = Column("rejected", Integer)
+    back_win_match = Column("back_win_match", Integer)
+    bf_live_coef = Column("bf_live_coef", Float)
+    bf_live_coef_matched = Column("bf_live_coef_matched", Float)
+    clf_hash = Column("clf_hash", String(50))
+
+    __table_args__ = (
+        PrimaryKeyConstraint("sex", "date", "case_name", "rnd", "back_id", "oppo_id"),
+    )
+
     def __init__(self, sex: str, date: datetime.date, case_name: str,
                  tour_name: str, level, surface, rnd, back_id: int, oppo_id: int,
                  predict_proba: float, predict_result: int, comments: str,
@@ -93,7 +93,9 @@ class PredictRec:
     def __eq__(self, other):
         return (
             self.sex == other.sex
-            and self.date == other.date
+            # 1 day differ admit (when match starts near midnight) and
+            # one service (clf_...) register date1, but another (betfair_svc) has date2
+            and abs(self.date - other.date) <= datetime.timedelta(days=1)
             and self.case_name == other.case_name
             and self.rnd == other.rnd
             and self.back_id == other.back_id
@@ -116,39 +118,11 @@ class PredictRec:
         )
 
 
-mapper(
-    PredictRec,
-    predicts_table,
-    properties={
-        "sex": predicts_table.c.sex,
-        "date": predicts_table.c.date,
-        "case_name": predicts_table.c.case_name,
-        "tour_name": predicts_table.c.tour_name,
-        "level": predicts_table.c.level,
-        "surface": predicts_table.c.surface,
-        "rnd": predicts_table.c.rnd,
-        "back_id": predicts_table.c.back_id,
-        "oppo_id": predicts_table.c.oppo_id,
-        "predict_proba": predicts_table.c.predict_proba,
-        "predict_result": predicts_table.c.predict_result,
-        "comments": predicts_table.c.comments,
-        "back_name": predicts_table.c.back_name,
-        "oppo_name": predicts_table.c.oppo_name,
-        "book_start_chance": predicts_table.c.book_start_chance,
-        "rejected": predicts_table.c.rejected,
-        "back_win_match": predicts_table.c.back_win_match,
-        "bf_live_coef": predicts_table.c.bf_live_coef,
-        "bf_live_coef_matched": predicts_table.c.bf_live_coef_matched,
-        "clf_hash": predicts_table.c.clf_hash,
-    },
-)
-
-
 class Handle:
     def __init__(self, engine, session):
         self.engine = engine
         self.session = session
-        self.records: List[PredictRec] = []
+        self.records: List[Predict] = []
 
     def commit(self):
         self.session.commit()
@@ -161,39 +135,39 @@ class Handle:
 
     def query_predicts(self, min_date=None, max_date=None):
         if min_date is None and max_date is None:
-            self.records = self.session.query(PredictRec).order_by(PredictRec.date).all()
+            self.records = self.session.query(Predict).order_by(Predict.date).all()
         elif min_date is not None and max_date is None:
             self.records = (
-                self.session.query(PredictRec)
-                .filter(min_date <= PredictRec.date)
-                .order_by(PredictRec.date)
+                self.session.query(Predict)
+                .filter(min_date <= Predict.date)
+                .order_by(Predict.date)
                 .all()
             )
         elif min_date is None and max_date is not None:
             self.records = (
-                self.session.query(PredictRec)
-                .filter(PredictRec.date < max_date)
-                .order_by(PredictRec.date)
+                self.session.query(Predict)
+                .filter(Predict.date < max_date)
+                .order_by(Predict.date)
                 .all()
             )
         elif min_date is not None and max_date is not None:
             self.records = (
-                self.session.query(PredictRec)
-                .filter((min_date <= PredictRec.date) & (PredictRec.date < max_date))
-                .order_by(PredictRec.date)
+                self.session.query(Predict)
+                .filter((min_date <= Predict.date) & (Predict.date < max_date))
+                .order_by(Predict.date)
                 .all()
             )
 
     def query_predict(self, sex: str, date: datetime.date, case_name: str,
                       back_id: int, oppo_id: int):
         rec = (
-            self.session.query(PredictRec)
+            self.session.query(Predict)
             .filter(
-                (PredictRec.sex == sex)
-                & (PredictRec.date == date)
-                & (PredictRec.case_name == case_name)
-                & (PredictRec.back_id == back_id)
-                & (PredictRec.oppo_id == oppo_id)
+                (Predict.sex == sex)
+                & (Predict.date == date)
+                & (Predict.case_name == case_name)
+                & (Predict.back_id == back_id)
+                & (Predict.oppo_id == oppo_id)
             )
             .first()
         )
@@ -304,27 +278,28 @@ def get_min_date(engine):
 def find_predict_rec_by(session, sex: str, date: datetime.date, case_name: str,
                         back_id: int, oppo_id: int):
     return (
-        session.query(PredictRec)
+        session.query(Predict)
         .filter_by(sex=sex, date=date, case_name=case_name,
                    back_id=back_id, oppo_id=oppo_id)
         .first()
     )
 
 
-SQLITE_TYPENAME = "sqlite"
+DBASE_TYPENAME = "sqlite"
+DBASE_NAME = "predicts_db"
 
 
-def open_db(dbtypename=SQLITE_TYPENAME):
+def open_db(dbtypename=DBASE_TYPENAME):
     e = make_engine(dbtypename)
     s = make_session(e)
     return Handle(engine=e, session=s)
 
 
-def make_engine(dbtypename=SQLITE_TYPENAME):
+def make_engine(dbtypename):
     return create_engine(
         "{}:///{}".format(
             dbtypename,
-            os.path.abspath(dbfilename(dbtypename=dbtypename)),
+            os.path.abspath(dbfilename(dbtypename)),
         )
     )
 
@@ -333,12 +308,12 @@ def make_session(engine):
     return sessionmaker(bind=engine)()
 
 
-def create_empty_db(dbtypename=SQLITE_TYPENAME):
+def create_empty_db(dbtypename=DBASE_TYPENAME):
     """GIVEN: no db file
     THEN create empty db file"""
     e = make_engine(dbtypename=dbtypename)
-    metadata.create_all(e)
+    Base.metadata.create_all(e)
 
 
-def dbfilename(dbtypename=SQLITE_TYPENAME):
-    return os.path.join(cfg_dir.predicts_db_dir(), dbtypename)
+def dbfilename(dbtypename=DBASE_TYPENAME):
+    return os.path.join(cfg_dir.predicts_db_dir(), f'{DBASE_NAME}.{dbtypename}')

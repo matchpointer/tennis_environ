@@ -17,8 +17,7 @@ import surf
 from loguru import logger as log
 import clf_common as cco
 import feature
-import predicts_db
-
+from predicts_db import predicts_db_usage
 
 MIN_QUAD_SIZE = 14  # for one player per all history
 MIN_HIST_DATA_SIZE = 5
@@ -81,7 +80,7 @@ def match_has_min_proba(match, decset_open_side: Side):
         log.info(
             f"clf {variant.name} try {match} \nback_side:{back_side} "
             f"PROB: {round(proba, 3)} thresholded {comment}")
-        predicts_db.write_predict(
+        predicts_db_usage.write_predict(
             match,
             case_name='decided_00dog',
             back_side=back_side,
@@ -105,7 +104,7 @@ def match_has_min_proba(match, decset_open_side: Side):
         log.info(
             f"clf {variant.name} try {match} \nfav_side:{fav_side} "
             f"PROB: {round(proba, 3)} {comment}")
-        predicts_db.write_predict(
+        predicts_db_usage.write_predict(
             match,
             case_name='decided_00dog',
             back_side=fav_side,

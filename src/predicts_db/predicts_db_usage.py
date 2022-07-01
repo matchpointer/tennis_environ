@@ -1,7 +1,7 @@
 # -*- coding=utf-8 -*-
 """
 утилиты для использования базы прогнозов классификаторов.
-Структура базы в predicts_dbsa.
+Структура базы в predicts_db_decl.
 Простые сценарии из командной строки  (--run) (см parse_command_line_args).
 
 Сейчас схема записи такова:
@@ -22,13 +22,13 @@ from pprint import pprint
 
 import stopwatch
 from oncourt import dba
-import predicts_dbsa
+from predicts_db import predicts_db_decl
 from side import Side
 from stat_cont import WinLoss
 from common import PredictResult
 
 
-predicts_db_hnd: Optional[predicts_dbsa.Handle] = None
+predicts_db_hnd: Optional[predicts_db_decl.Handle] = None
 
 NUM_HOURS_TO_COMMIT = 4
 commit_timer = stopwatch.OverTimer(3600 * NUM_HOURS_TO_COMMIT)
@@ -44,7 +44,7 @@ def _commit(bytime: bool = False):
 def initialize():
     global predicts_db_hnd
     if predicts_db_hnd is None:
-        predicts_db_hnd = predicts_dbsa.open_db()
+        predicts_db_hnd = predicts_db_decl.open_db()
 
 
 def finalize():
@@ -53,7 +53,7 @@ def finalize():
 
 
 def cut_comments(comments):
-    return comments[:min(predicts_dbsa.MAX_COMMENTS_LEN, len(comments))]
+    return comments[:min(predicts_db_decl.MAX_COMMENTS_LEN, len(comments))]
 
 
 def write_rejected(match, case_name: str, back_side: Side, reason: str = ""):
@@ -63,10 +63,10 @@ def write_rejected(match, case_name: str, back_side: Side, reason: str = ""):
         back_id, oppo_id = match.first_player.ident, match.second_player.ident
     else:
         back_id, oppo_id = match.second_player.ident, match.first_player.ident
-    rec = predicts_dbsa.find_predict_rec_by(
+    rec = predicts_db_decl.find_predict_rec_by(
         predicts_db_hnd.session, match.sex, match.date,
         case_name, back_id=back_id, oppo_id=oppo_id)
-    if isinstance(rec, predicts_dbsa.PredictRec):
+    if isinstance(rec, predicts_db_decl.Predict):
         rec.rejected = 1
         if reason:
             rec.comments = cut_comments(rec.comments + " " + reason)
@@ -81,10 +81,10 @@ def write_bf_live_coef(date: datetime.date, sex: str, fst_id: int, snd_id: int,
         back_id, oppo_id = fst_id, snd_id
     else:
         back_id, oppo_id = snd_id, fst_id
-    rec = predicts_dbsa.find_predict_rec_by(
+    rec = predicts_db_decl.find_predict_rec_by(
         predicts_db_hnd.session, sex, date,
         case_name, back_id=back_id, oppo_id=oppo_id)
-    if isinstance(rec, predicts_dbsa.PredictRec):
+    if isinstance(rec, predicts_db_decl.Predict):
         rec.bf_live_coef = bf_live_coef
         _commit(bytime=False)
 
@@ -98,10 +98,10 @@ def write_bf_live_coef_matched(date: datetime.date, sex: str, fst_id: int, snd_i
         back_id, oppo_id = fst_id, snd_id
     else:
         back_id, oppo_id = snd_id, fst_id
-    rec = predicts_dbsa.find_predict_rec_by(
+    rec = predicts_db_decl.find_predict_rec_by(
         predicts_db_hnd.session, sex, date,
         case_name, back_id=back_id, oppo_id=oppo_id)
-    if isinstance(rec, predicts_dbsa.PredictRec):
+    if isinstance(rec, predicts_db_decl.Predict):
         rec.bf_live_coef_matched = bf_live_coef_matched
         _commit(bytime=False)
 
@@ -120,7 +120,7 @@ def write_predict(match, case_name: str, back_side: Side, proba: float,
         back_name = match.second_player.name
         oppo_name = match.first_player.name
         book_start_chance = 1 - match.first_player_bet_chance()
-    rec = predicts_dbsa.PredictRec(
+    rec = predicts_db_decl.Predict(
         date=match.date,
         sex=match.sex,
         case_name=case_name,
@@ -146,7 +146,7 @@ def write_predict(match, case_name: str, back_side: Side, proba: float,
 def run_dump_all_to_csv():
     assert predicts_db_hnd is not None, 'not opened db'
     predicts_db_hnd.query_predicts()
-    dbfilename = predicts_dbsa.dbfilename()
+    dbfilename = predicts_db_decl.dbfilename()
     csvfilename = os.path.splitext(dbfilename)[0] + '.csv'
     predicts_db_hnd.records_to_csv_file(csvfilename)
 
@@ -328,7 +328,7 @@ def run_matchresult_flags():
 
 def _test_db_add_two_records():
     def add_rec(*args, **kwargs):
-        r = predicts_dbsa.PredictRec(*args, **kwargs)
+        r = predicts_db_decl.Predict(*args, **kwargs)
         predicts_db_hnd.insert_obj(r)
 
     assert predicts_db_hnd is not None, 'not opened db'

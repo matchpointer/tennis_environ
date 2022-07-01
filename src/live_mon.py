@@ -52,7 +52,7 @@ from live_alerts import (
     AlertMessage,
     AlertSetDecidedWinDispatchClf,
 )
-import predicts_db
+from predicts_db import predicts_db_usage
 
 
 class EventsFile:
@@ -560,13 +560,13 @@ def main():
     log.info("DEBUG_MATCH_DATA_NAME: {}".format(get_debug_match_name()))
     app = Application(company=company, quick_timeout=2.7, slow_timeout=132)
     app.master.title("Live monitor")
-    predicts_db.initialize()
+    predicts_db_usage.initialize()
     app.mainloop()
     log.info("Live monitor exiting")
     stop_web_driver(app.wpage.get_web_driver())
     if app.events_file is not None:
         app.events_file.close()
-    predicts_db.finalize()
+    predicts_db_usage.finalize()
     dba.close_connect()
 
 

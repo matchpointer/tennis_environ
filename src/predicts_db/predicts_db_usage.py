@@ -63,7 +63,7 @@ def write_rejected(match, case_name: str, back_side: Side, reason: str = ""):
         back_id, oppo_id = match.first_player.ident, match.second_player.ident
     else:
         back_id, oppo_id = match.second_player.ident, match.first_player.ident
-    rec = predicts_db_decl.find_predict_rec_by(
+    rec = predicts_db_decl.find_predict_rec(
         predicts_db_hnd.session, match.sex, match.date,
         case_name, back_id=back_id, oppo_id=oppo_id)
     if isinstance(rec, predicts_db_decl.Predict):
@@ -81,7 +81,7 @@ def write_bf_live_coef(date: datetime.date, sex: str, fst_id: int, snd_id: int,
         back_id, oppo_id = fst_id, snd_id
     else:
         back_id, oppo_id = snd_id, fst_id
-    rec = predicts_db_decl.find_predict_rec_by(
+    rec = predicts_db_decl.find_predict_rec(
         predicts_db_hnd.session, sex, date,
         case_name, back_id=back_id, oppo_id=oppo_id)
     if isinstance(rec, predicts_db_decl.Predict):
@@ -98,7 +98,7 @@ def write_bf_live_coef_matched(date: datetime.date, sex: str, fst_id: int, snd_i
         back_id, oppo_id = fst_id, snd_id
     else:
         back_id, oppo_id = snd_id, fst_id
-    rec = predicts_db_decl.find_predict_rec_by(
+    rec = predicts_db_decl.find_predict_rec(
         predicts_db_hnd.session, sex, date,
         case_name, back_id=back_id, oppo_id=oppo_id)
     if isinstance(rec, predicts_db_decl.Predict):

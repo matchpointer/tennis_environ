@@ -122,10 +122,13 @@ class Handle:
     def __init__(self, engine, session):
         self.engine = engine
         self.session = session
-        self.records: List[Predict] = []
+        self.records: List[Predict] = []  # readonly results after query_predict* methods
 
     def commit(self):
         self.session.commit()
+
+    def flush(self):
+        self.session.flush()
 
     def insert_obj(self, record):
         self.session.add(record)
@@ -164,7 +167,7 @@ class Handle:
             self.session.query(Predict)
             .filter(
                 (Predict.sex == sex)
-                & (Predict.date == date)
+                & (abs(Predict.date - date) <= datetime.timedelta(days=1))
                 & (Predict.case_name == case_name)
                 & (Predict.back_id == back_id)
                 & (Predict.oppo_id == oppo_id)
@@ -275,12 +278,17 @@ def get_min_date(engine):
         return datetime.datetime.strptime(date_txt, "%Y-%m-%d").date()
 
 
-def find_predict_rec_by(session, sex: str, date: datetime.date, case_name: str,
-                        back_id: int, oppo_id: int):
+def find_predict_rec(session, sex: str, date: datetime.date, case_name: str,
+                     back_id: int, oppo_id: int):
     return (
         session.query(Predict)
-        .filter_by(sex=sex, date=date, case_name=case_name,
-                   back_id=back_id, oppo_id=oppo_id)
+        .filter(
+            (Predict.sex == sex)
+            & (abs(Predict.date - date) <= datetime.timedelta(days=1))
+            & (Predict.case_name == case_name)
+            & (Predict.back_id == back_id)
+            & (Predict.oppo_id == oppo_id)
+        )
         .first()
     )
 

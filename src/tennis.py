@@ -8,8 +8,7 @@ from typing import Optional, Dict
 import common as co
 from loguru import logger as log
 
-import oncourt.sql
-from oncourt import dbcon, extplayers
+from oncourt import dbcon, extplayers, sql
 import tennis_time as tt
 from surf import make_surf
 import score as sc
@@ -241,13 +240,13 @@ class Player:
     def read_birth_date(self, sex):
         if not self.ident or self.birth_date is not None:
             return
-        sql = """SELECT DATE_P
+        query = """SELECT DATE_P
                  FROM Players_{}
                  WHERE ID_P = {};""".format(
             sex, self.ident
         )
         with closing(dbcon.get_connect().cursor()) as cursor:
-            cursor.execute(sql)
+            cursor.execute(query)
             row = cursor.fetchone()
         if row:
             birth = row[0]
@@ -729,7 +728,7 @@ class HeadToHead:
         ):
             return
         tour_date_max = tt.past_monday_date(match.date)
-        sql = """select Rounds.NAME_R, Courts.NAME_C, tours.ID_T, tours.NAME_T, 
+        query = """select Rounds.NAME_R, Courts.NAME_C, tours.ID_T, tours.NAME_T, 
                         tours.RANK_T, tours.DATE_T, tours.PRIZE_T, tours.COUNTRY_T,
                         games.ID1_G, games.ID2_G, games.RESULT_G, games.DATE_G
                  from Tours_{0} AS tours, Games_{0} AS games, Rounds, Courts
@@ -742,7 +741,7 @@ class HeadToHead:
                    and (tours.NAME_T Not Like '%juniors%')
                    ;""".format(
             sex,
-            oncourt.sql.msaccess_date(tour_date_max),
+            sql.msaccess_date(tour_date_max),
             match.first_player.ident,
             match.second_player.ident,
         )
@@ -760,7 +759,7 @@ class HeadToHead:
                 p2nd_id,
                 score_name,
                 match_dtime,
-            ) in cursor.execute(sql):
+            ) in cursor.execute(query):
                 score = sc.Score(score_name)
                 if score.retired and completed_only:
                     continue

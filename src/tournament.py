@@ -406,7 +406,7 @@ class SqlBuilder:
         self.with_paired = with_paired
         self.with_mix = with_mix
         assert not (not with_paired and with_mix), "inconsistent with_paired with_mix"
-        self.sql = self.build()
+        self.query = self.build()
 
     def build(self):
         result = (
@@ -507,7 +507,7 @@ class SqlBuilder:
 
     def rows(self):
         with closing(dbcon.get_connect().cursor()) as cursor:
-            cursor.execute(self.sql)
+            cursor.execute(self.query)
             for row in dbcon.result_iter(cursor):
                 yield SqlBuilder.Row(*row)
 

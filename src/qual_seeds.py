@@ -25,14 +25,14 @@ def qual_players_idents(sex, tour_id):
 
 def _initialize_sex(sex):
     quals_from_tid = __wta_quals_from_tid if sex == "wta" else __atp_quals_from_tid
-    sql = """select ID_T_S, ID_P_S
+    query = """select ID_T_S, ID_P_S
              from Seed_{0}
              where SEEDING Like '%q%' or SEEDING Like '%LL%'
              order by ID_T_S;""".format(
         sex
     )
     with closing(dbcon.get_connect().cursor()) as cursor:
-        for (tour_id, player_id) in cursor.execute(sql):
+        for (tour_id, player_id) in cursor.execute(query):
             quals_from_tid[tour_id].append(player_id)
 
 

@@ -76,7 +76,7 @@ def read_players_from_db(sex, players_set, min_date, players_ext_dct):
         else:
             players_set.add(tennis.Player(pid, name, country))
 
-    sql = """
+    query = """
     select plr_left.ID_P,  plr_left.NAME_P,  plr_left.COUNTRY_P,
            plr_right.ID_P, plr_right.NAME_P, plr_right.COUNTRY_P
     from Games_{0} AS games, Tours_{0} AS tours, 
@@ -100,7 +100,7 @@ def read_players_from_db(sex, players_set, min_date, players_ext_dct):
             plr_right_id,
             plr_right_name,
             plr_right_country,
-        ) in cursor.execute(sql):
+        ) in cursor.execute(query):
             add_player(plr_left_id, plr_left_name, plr_left_country)
             add_player(plr_right_id, plr_right_name, plr_right_country)
 

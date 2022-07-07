@@ -1,7 +1,7 @@
 # -*- coding=utf-8 -*-
 import unittest
 
-from oncourt import dba
+from oncourt import dbcon
 from decided_win_by_two_sets_stat import ENABLE_SOFT_LEVELS, read_scores_dict
 
 
@@ -19,5 +19,5 @@ class ReadFilesTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    dba.close_connect()
+    dbcon.close_connect()
 

@@ -5,7 +5,8 @@ from typing import Tuple, Optional, DefaultDict
 import datetime
 
 import common as co
-from oncourt import dba
+import oncourt.sql
+from oncourt import dbcon
 
 """ access to oncourt ratings (since 2003.01.06)
 """
@@ -99,20 +100,20 @@ def __date_entry(sex, date):
 
 
 def __initialize_sex(sex, min_date=None, max_date=None):
-    sql = """select DATE_R, ID_P_R, POS_R, POINT_R 
+    query = """select DATE_R, ID_P_R, POS_R, POINT_R 
              from Ratings_{} """.format(
         sex
     )
-    dates_cond = dba.sql_dates_condition(min_date, max_date=max_date, dator="DATE_R")
+    dates_cond = oncourt.sql.sql_dates_condition(min_date, max_date=max_date, dator="DATE_R")
     if dates_cond:
-        sql += """
+        query += """
                where 1 = 1 {} """.format(
             dates_cond
         )
-    sql += """
+    query += """
            order by DATE_R desc;"""
-    with closing(dba.get_connect().cursor()) as cursor:
-        for (dtime, player_id, rating_pos, rating_pts) in cursor.execute(sql):
+    with closing(dbcon.get_connect().cursor()) as cursor:
+        for (dtime, player_id, rating_pos, rating_pts) in cursor.execute(query):
             _sex_dict[sex][dtime.date()][player_id] = (rating_pos, rating_pts)
 
 

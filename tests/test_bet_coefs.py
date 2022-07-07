@@ -3,14 +3,14 @@ import unittest
 import datetime
 
 import common as co
-from oncourt import dba
+from oncourt import dbcon
 from bet_coefs import MARATHON_ID, initialize, db_offers
 
 
 class SimpleTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        dba.open_connect()
+        dbcon.open_connect()
         initialize(sex="wta", bettor_id=MARATHON_ID, min_date=datetime.date(2017, 1, 1))
         initialize(sex="atp", bettor_id=MARATHON_ID, min_date=datetime.date(2018, 1, 1))
 
@@ -65,4 +65,4 @@ class SimpleTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    dba.close_connect()
+    dbcon.close_connect()

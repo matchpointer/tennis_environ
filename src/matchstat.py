@@ -8,7 +8,8 @@ from typing import Dict, Tuple, Optional, DefaultDict
 
 import tkinter.ttk
 
-from oncourt import dba, extplayers
+import oncourt.sql
+from oncourt import dbcon, extplayers
 import common as co
 import tennis_time as tt
 from loguru import logger as log
@@ -408,21 +409,21 @@ def _matchstates(sex):
 
 
 def __initialize_sex_surface(sex, min_date=None, max_date=None):
-    sql = """
+    query = """
           select tours.ID_T, Courts.NAME_C
           from Tours_{0} AS tours, Courts 
           where tours.ID_C_T = Courts.ID_C
           {1};
           """.format(
-        sex, dba.sql_dates_condition(min_date, max_date)
+        sex, oncourt.sql.sql_dates_condition(min_date, max_date)
     )
-    with closing(dba.get_connect().cursor()) as cursor:
-        for (tour_id, surf_txt) in cursor.execute(sql):
+    with closing(dbcon.get_connect().cursor()) as cursor:
+        for (tour_id, surf_txt) in cursor.execute(query):
             _sex_surf_dict[sex][tour_id] = make_surf(surf_txt)
 
 
 def __initialize_sex(sex, min_date=None, max_date=None, time_reverse=False):
-    sql = """
+    query = """
        select tours.DATE_T, st.ID_T, st.ID_R, st.ID1, st.ID2,
          FS_1, FSOF_1, W1S_1, W1SOF_1, W2S_1, W2SOF_1, BP_1, BPOF_1, ACES_1, DF_1, TPW_1,
          FS_2, FSOF_2, W1S_2, W1SOF_2, W2S_2, W2SOF_2, BP_2, BPOF_2, ACES_2, DF_2, TPW_2
@@ -431,10 +432,10 @@ def __initialize_sex(sex, min_date=None, max_date=None, time_reverse=False):
        order by tours.DATE_T {2}, st.ID_T, st.ID_R {2};
        """.format(
         sex,
-        dba.sql_dates_condition(min_date, max_date),
+        oncourt.sql.sql_dates_condition(min_date, max_date),
         "desc" if time_reverse else "asc",
     )
-    with closing(dba.get_connect().cursor()) as cursor:
+    with closing(dbcon.get_connect().cursor()) as cursor:
         for (
             tour_dt,
             tour_id,
@@ -463,7 +464,7 @@ def __initialize_sex(sex, min_date=None, max_date=None, time_reverse=False):
             rhs_aces,
             rhs_df,
             rhs_tpw,
-        ) in cursor.execute(sql):
+        ) in cursor.execute(query):
             tour_date = tour_dt.date() if tour_dt else None
             rnd = Round.from_oncourt_id(rnd_id)
             plr_min_id = min(lhs_plr_id, rhs_plr_id)

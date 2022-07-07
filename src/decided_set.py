@@ -11,10 +11,11 @@ from loguru import logger as log
 import common as co
 import cfg_dir
 import file_utils as fu
+import oncourt.sql
 from stat_cont import WinLoss, Sumator
 import report_line as rl
 import dict_tools
-from oncourt import dba, extplayers
+from oncourt import dbcon, extplayers
 import matchstat
 import score as sc
 import feature
@@ -185,7 +186,7 @@ def initialize_results(sex=None, min_date=None, max_date=None):
 
 def _initialize_results_sex(sex, min_date=None, max_date=None):
     tmp_dct = defaultdict(list)  # date -> list of match_results
-    sql = """select tours.DATE_T, games.DATE_G, games.RESULT_G, games.ID1_G, games.ID2_G
+    query = """select tours.DATE_T, games.DATE_G, games.RESULT_G, games.ID1_G, games.ID2_G
              from Tours_{0} AS tours, games_{0} AS games, Players_{0} AS fst_plr
              where games.ID_T_G = tours.ID_T 
                and games.ID1_G = fst_plr.ID_P
@@ -193,10 +194,10 @@ def _initialize_results_sex(sex, min_date=None, max_date=None):
                and (fst_plr.NAME_P Not Like '%/%')""".format(
         sex
     )
-    sql += dba.sql_dates_condition(min_date, max_date)
-    sql += " ;"
-    with closing(dba.get_connect().cursor()) as cursor:
-        for (tour_dt, match_dt, score_txt, fst_id, snd_id) in cursor.execute(sql):
+    query += oncourt.sql.sql_dates_condition(min_date, max_date)
+    query += " ;"
+    with closing(dbcon.get_connect().cursor()) as cursor:
+        for (tour_dt, match_dt, score_txt, fst_id, snd_id) in cursor.execute(query):
             tdate = tour_dt.date() if tour_dt else None
             mdate = match_dt.date() if match_dt else None
             if not score_txt:
@@ -288,7 +289,7 @@ def process_sex(sex):
 
 def do_stat(sex=None):
     try:
-        dba.open_connect()
+        dbcon.open_connect()
         extplayers.initialize()
 
         log.info(__file__ + " begining for stat with sex: " + str(sex))
@@ -300,7 +301,7 @@ def do_stat(sex=None):
         else:
             process_sex(sex)
 
-        dba.close_connect()
+        dbcon.close_connect()
         log.info(
             "{} finished within {}".format(
                 __file__, str(datetime.datetime.now() - start_datetime)

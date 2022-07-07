@@ -98,9 +98,9 @@ class PlayerTodayLastresCaseTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from oncourt import extplayers
-        from oncourt import dba
+        from oncourt import dbcon
 
-        dba.open_connect()
+        dbcon.open_connect()
         extplayers.initialize(yearsnum=1.2)
 
         date = tt.past_monday_date(datetime.date.today())

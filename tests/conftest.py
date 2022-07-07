@@ -2,7 +2,7 @@
 """Define some fixtures to use in the project."""
 import pytest
 
-from oncourt import dba
+from oncourt import dbcon
 from loguru import logger as log
 from score_company import get_company
 from pages.create_page import create_page
@@ -27,12 +27,12 @@ def log_init_debug():
 def get_dba():
     """Connect to oncourt db before tests, disconnect after."""
     # Setup : start db
-    dba.open_connect()
+    dbcon.open_connect()
 
-    yield dba.get_connect()  # this is where the testing happens
+    yield dbcon.get_connect()  # this is where the testing happens
 
     # Teardown : stop db
-    dba.close_connect()
+    dbcon.close_connect()
 
 
 @pytest.fixture(scope="session")

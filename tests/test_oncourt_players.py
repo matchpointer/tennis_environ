@@ -1,14 +1,14 @@
 # -*- coding=utf-8 -*-
 import unittest
 
-from oncourt import dba
+from oncourt import dbcon
 from oncourt.extplayers import initialize, get_players
 
 
 class UnitTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        dba.open_connect()
+        dbcon.open_connect()
         initialize(yearsnum=8)
 
     def test_min_players(self):

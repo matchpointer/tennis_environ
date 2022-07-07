@@ -3,15 +3,15 @@ import unittest
 from datetime import date
 
 from pprint import pprint
-from oncourt import dba
+from oncourt import dbcon
 from atfirst_after import after_retired_results
 
 
 class AfterRetiredTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        if not dba.initialized():
-            dba.open_connect()
+        if not dbcon.initialized():
+            dbcon.open_connect()
 
     def test_rybakina_2022_02_21(self):
         # в этот день Рыбакина выходила на корт после снятия 11 дней назад

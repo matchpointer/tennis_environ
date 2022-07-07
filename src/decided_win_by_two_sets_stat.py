@@ -11,11 +11,12 @@ import common as co
 import file_utils as fu
 import dict_tools
 import lev
+import oncourt.sql
 import stat_cont as st
 import score as sc
 import tennis
 import tennis_time as tt
-from oncourt import dba, read_db_helper
+from oncourt import dbcon, read_db_helper
 import ratings_std
 import feature
 from clf_common import RANK_STD_BOTH_ABOVE, RANK_STD_MAX_DIF
@@ -106,8 +107,8 @@ def _make_set2winner_orient(set1_score, set2_score):
 
 def fill_data(sex, min_date=None, max_date=None):
     """ ratings_std уже д.б. инициализирован для переданного интервала времени """
-    if not dba.initialized():
-        dba.open_connect()
+    if not dbcon.initialized():
+        dbcon.open_connect()
 
     if sex in ("wta", None):
         _fill_results_sex(
@@ -130,7 +131,7 @@ def fill_data(sex, min_date=None, max_date=None):
 def _fill_results_sex(
     sex, max_rating, max_rating_dif, min_date=None, max_date=None
 ):
-    sql = """select tours.ID_T, tours.DATE_T, tours.NAME_T, tours.RANK_T, tours.PRIZE_T, 
+    query = """select tours.ID_T, tours.DATE_T, tours.NAME_T, tours.RANK_T, tours.PRIZE_T, 
                    games.ID_R_G, games.RESULT_G, games.ID1_G, games.ID2_G
              from Tours_{0} AS tours, games_{0} AS games, Players_{0} AS fst_plr
              where games.ID_T_G = tours.ID_T 
@@ -139,9 +140,9 @@ def _fill_results_sex(
                and (fst_plr.NAME_P Not Like '%/%') """.format(
         sex
     )
-    sql += dba.sql_dates_condition(min_date, max_date)
-    sql += " order by tours.DATE_T;"
-    with closing(dba.get_connect().cursor()) as cursor:
+    query += oncourt.sql.sql_dates_condition(min_date, max_date)
+    query += " order by tours.DATE_T;"
+    with closing(dbcon.get_connect().cursor()) as cursor:
         for (
             tour_id,
             tour_dt,
@@ -152,7 +153,7 @@ def _fill_results_sex(
             score_txt,
             fst_id,
             snd_id,
-        ) in cursor.execute(sql):
+        ) in cursor.execute(query):
             date = tour_dt.date() if tour_dt else None
             if date is None:
                 raise co.TennisScoreError("none date {}".format(tour_name))
@@ -309,7 +310,7 @@ read_scores_dict.cache = dict()  # (sex, level) -> scores_dict
 
 def do_stat():
     try:
-        dba.open_connect()
+        dbcon.open_connect()
         msg = "sex: {} max_rtg: {}  max_rtg_dif: {}".format(
             args.sex, args.max_rating, args.max_rating_dif
         )
@@ -320,7 +321,7 @@ def do_stat():
         maker.process_all()
         log.info(__file__ + " done {}".format(ASPECT))
 
-        dba.close_connect()
+        dbcon.close_connect()
         log.info(__file__ + " finished sex: {}".format(args.sex))
         return 0
     except Exception as err:

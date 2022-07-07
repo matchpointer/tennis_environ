@@ -37,7 +37,7 @@ import common as co
 import feature
 import tennis_time as tt
 import bet_coefs
-from oncourt import dba, automate, extplayers
+from oncourt import dbcon, automate, extplayers
 import matchstat
 import ratings
 import decided_set
@@ -448,7 +448,7 @@ if __name__ == "__main__":
     log.add('../log/pre_live.log', level='INFO', rotation='10:00', compression='zip')
     args = parse_command_line_args()
     log.info("started with company_name {}".format(args.company_name))
-    dba.open_connect()
+    dbcon.open_connect()
     extplayers.initialize(yearsnum=1.2)
     ratings.initialize(
         sex=None,
@@ -475,5 +475,5 @@ if __name__ == "__main__":
         weeked_tours.dump_tail_tours(sex="wta", tail_weeks=2)
         weeked_tours.dump_tail_tours(sex="atp", tail_weeks=2)
     main(make_scripts())
-    dba.close_connect()
+    dbcon.close_connect()
     sys.exit(0)

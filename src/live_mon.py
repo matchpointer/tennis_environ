@@ -27,7 +27,7 @@ import config_personal
 import ratings
 import tennis_time as tt
 import bet_coefs
-from oncourt import dba, extplayers
+from oncourt import dbcon, extplayers
 import sms_svc
 from pages.create_page import create_page
 from wdriver import stop_web_driver
@@ -498,7 +498,7 @@ def main():
     config_personal.initialize_from_file('../personal.cfg', sign='matchpointer')
     if args.betfair:
         betfair_client.initialize()
-    dba.open_connect()
+    dbcon.open_connect()
     extplayers.initialize(yearsnum=1.2)
     ratings.initialize(
         sex=None,
@@ -567,7 +567,7 @@ def main():
     if app.events_file is not None:
         app.events_file.close()
     predicts_db_usage.finalize()
-    dba.close_connect()
+    dbcon.close_connect()
 
 
 if __name__ == "__main__":

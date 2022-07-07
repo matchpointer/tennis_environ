@@ -1,7 +1,7 @@
 # -*- coding=utf-8 -*-
 import unittest
 
-from oncourt import dba, extplayers
+from oncourt import dbcon, extplayers
 from tennis import Player
 from player_name_ident import AbbrName, identify_player
 
@@ -167,10 +167,10 @@ class AbbrNameTest(unittest.TestCase):
 
 
 def setUpModule():
-    dba.open_connect()
+    dbcon.open_connect()
     extplayers.initialize()
 
 
 if __name__ == "__main__":
     unittest.main()
-    dba.close_connect()
+    dbcon.close_connect()

@@ -18,8 +18,9 @@ import csv
 from loguru import logger as log
 import cfg_dir
 import common as co
+import oncourt.sql
 import tennis_time as tt
-from oncourt import dba
+from oncourt import dbcon
 import tennis
 import file_utils as fu
 
@@ -89,9 +90,9 @@ def read_players_from_db(sex, players_set, min_date, players_ext_dct):
       and (plr_left.NAME_P Not Like '%/%')
       and (plr_right.NAME_P Not Like '%/%')
       and tours.DATE_T >= {1};""".format(
-        sex, dba.msaccess_date(min_date)
+        sex, oncourt.sql.msaccess_date(min_date)
     )
-    with closing(dba.get_connect().cursor()) as cursor:
+    with closing(dbcon.get_connect().cursor()) as cursor:
         for (
             plr_left_id,
             plr_left_name,
@@ -119,11 +120,11 @@ _actual_playerid_cache: Sex_PidList = defaultdict(list)
 
 
 def write_actual_players(sex, yearsnum=1.8):
-    dba.open_connect()
+    dbcon.open_connect()
     initialize(sex, yearsnum=yearsnum)
     with open(_actual_players_filename(sex), "w") as fh:
         fh.write(",".join([str(p.ident) for p in get_players(sex)]))
-    dba.close_connect()
+    dbcon.close_connect()
 
 
 def _actual_players_filename(sex):

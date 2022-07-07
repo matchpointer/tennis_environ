@@ -13,7 +13,7 @@ from surf import make_surf
 import score as sc
 import tennis
 import cfg_dir
-from oncourt import dba, extplayers
+from oncourt import dbcon, extplayers
 import stat_cont as st
 import dict_tools
 import matchstat
@@ -853,7 +853,7 @@ class Application(tkinter.Frame):
 def main():
     try:
         args = parse_command_line_args()
-        dba.open_connect()
+        dbcon.open_connect()
         extplayers.initialize()
         ratings.initialize("wta", rtg_names=("elo",))
         ratings.initialize("atp", rtg_names=("elo",))
@@ -870,7 +870,7 @@ def main():
         log.info("score: {}".format(app.score()))
         log.info("level: {}".format(app.level()))
         log.info("surface: {}".format(app.surface()))
-        dba.close_connect()
+        dbcon.close_connect()
         return 0
     except Exception as err:
         log.exception("{0} [{1}]".format(err, err.__class__.__name__))

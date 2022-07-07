@@ -3,7 +3,7 @@ import unittest
 import datetime
 import copy
 
-from oncourt import dba
+from oncourt import dbcon
 from decided_set import player_winloss, initialize_results, results_dict
 
 
@@ -39,6 +39,6 @@ class WtaWinlossPlayerTest(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    dba.open_connect()
+    dbcon.open_connect()
     unittest.main()
-    dba.close_connect()
+    dbcon.close_connect()

@@ -13,8 +13,9 @@ from loguru import logger as log
 import cfg_dir
 import common as co
 import file_utils as fu
+import oncourt.sql
 import score as sc
-from oncourt import dba
+from oncourt import dbcon
 import feature
 
 
@@ -174,18 +175,18 @@ def get_presence_results(
     present_pids = set()
     present_results = []
     date_now = datetime.date.today()
-    if not dba.initialized():
-        dba.open_connect()
-    sql = """select games.DATE_G, games.RESULT_G, games.ID1_G, games.ID2_G
+    if not dbcon.initialized():
+        dbcon.open_connect()
+    query = """select games.DATE_G, games.RESULT_G, games.ID1_G, games.ID2_G
              from Tours_{0} AS tours, games_{0} AS games, Players_{0} AS fst_plr
              where games.ID_T_G = tours.ID_T 
                and games.ID1_G = fst_plr.ID_P
                and (tours.NAME_T Not Like '%juniors%')
                and (fst_plr.NAME_P Not Like '%/%') """.format(sex)
-    sql += dba.sql_dates_condition(min_date, max_date, dator="games.DATE_G")
-    sql += " order by games.DATE_G desc;"
-    with closing(dba.get_connect().cursor()) as cursor:
-        for (match_dt, score_txt, fst_id, snd_id) in cursor.execute(sql):
+    query += oncourt.sql.sql_dates_condition(min_date, max_date, dator="games.DATE_G")
+    query += " order by games.DATE_G desc;"
+    with closing(dbcon.get_connect().cursor()) as cursor:
+        for (match_dt, score_txt, fst_id, snd_id) in cursor.execute(query):
             match_date = match_dt.date() if match_dt else None
             if not score_txt:
                 continue  # may be it is scheduled match

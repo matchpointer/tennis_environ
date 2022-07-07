@@ -2,7 +2,7 @@
 import unittest
 import datetime
 
-from oncourt import dba
+from oncourt import dbcon
 from ratings_std import top_players_pts_list, _sex_dict, get_rank, get_pts, initialize
 from tennis import Player
 
@@ -10,7 +10,7 @@ from tennis import Player
 class RatingsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        dba.open_connect()
+        dbcon.open_connect()
         initialize(sex=None, min_date=datetime.date(2003, 1, 6))
 
     @staticmethod

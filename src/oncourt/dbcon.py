@@ -2,7 +2,7 @@ import os
 import pyodbc
 from contextlib import contextmanager
 
-""" at windows 10 you must install Access Database Engine redistributable  (2010)
+""" at windows need install Access Database Engine redistributable  (2010)
 """
 
 __conn = None
@@ -70,15 +70,3 @@ def result_iter(cursor, arraysize=1000):
         for result in results:
             yield result
 
-
-def msaccess_date(date):
-    return "#{}/{}/{}#".format(date.month, date.day, date.year)
-
-
-def sql_dates_condition(min_date, max_date, dator="tours.DATE_T"):
-    result = ""
-    if min_date is not None:
-        result += " and {} >= {}\n".format(dator, msaccess_date(min_date))
-    if max_date is not None:
-        result += " and {} < {}\n".format(dator, msaccess_date(max_date))
-    return result

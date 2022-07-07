@@ -9,7 +9,7 @@ from recordclass import recordclass
 
 import file_utils as fu
 import cfg_dir
-from oncourt import dba, read_db_helper, extplayers
+from oncourt import dbcon, read_db_helper, extplayers
 from loguru import logger as log
 import tennis_time as tt
 from score import is_dec_supertie_scr
@@ -373,8 +373,8 @@ def load_json(sex: str, filename: str, surface="all"):
 def process(sex: str, min_date, max_date):
     from tournament import tours_generator
 
-    if not dba.initialized():
-        dba.open_connect()
+    if not dbcon.initialized():
+        dbcon.open_connect()
     if max_date.isoweekday() == 1:
         # for including qualification matches with match.date < max_date
         max_tour_date = max_date + datetime.timedelta(days=7)

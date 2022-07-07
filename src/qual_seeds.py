@@ -2,7 +2,7 @@ import collections
 from contextlib import closing
 from typing import List, Dict
 
-from oncourt import dba
+from oncourt import dbcon
 
 # {tour_id -> List[player_id]}
 __wta_quals_from_tid: Dict[int, List[int]] = collections.defaultdict(list)
@@ -31,7 +31,7 @@ def _initialize_sex(sex):
              order by ID_T_S;""".format(
         sex
     )
-    with closing(dba.get_connect().cursor()) as cursor:
+    with closing(dbcon.get_connect().cursor()) as cursor:
         for (tour_id, player_id) in cursor.execute(sql):
             quals_from_tid[tour_id].append(player_id)
 
@@ -41,11 +41,11 @@ if __name__ == "__main__":
 
     log.add('../log/qual_seeds.log', level='INFO',
             rotation='10:00', compression='zip')
-    dba.open_connect()
+    dbcon.open_connect()
 
     initialize()
 
     print("wta len: %d" % len(__wta_quals_from_tid))
     print("atp len: %d" % len(__atp_quals_from_tid))
 
-    dba.close_connect()
+    dbcon.close_connect()

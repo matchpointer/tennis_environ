@@ -2,7 +2,7 @@
 import unittest
 import datetime
 
-from oncourt import dba
+from oncourt import dbcon
 import tennis_time as tt
 from stat_cont import WinLoss
 from tennis import Player, Round
@@ -109,6 +109,6 @@ class MatchStatTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    dba.open_connect()
+    dbcon.open_connect()
     unittest.main()
-    dba.close_connect()
+    dbcon.close_connect()

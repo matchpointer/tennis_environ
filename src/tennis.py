@@ -7,7 +7,9 @@ from typing import Optional, Dict
 
 import common as co
 from loguru import logger as log
-from oncourt import dba, extplayers
+
+import oncourt.sql
+from oncourt import dbcon, extplayers
 import tennis_time as tt
 from surf import make_surf
 import score as sc
@@ -244,7 +246,7 @@ class Player:
                  WHERE ID_P = {};""".format(
             sex, self.ident
         )
-        with closing(dba.get_connect().cursor()) as cursor:
+        with closing(dbcon.get_connect().cursor()) as cursor:
             cursor.execute(sql)
             row = cursor.fetchone()
         if row:
@@ -602,7 +604,7 @@ class Match:
 
         if self.rnd is None or self.rnd.qualification():
             return
-        with closing(dba.get_connect().cursor()) as cursor:
+        with closing(dbcon.get_connect().cursor()) as cursor:
             self.first_draw_status = fetch_draw_status(self.first_player.ident)
             self.second_draw_status = fetch_draw_status(self.second_player.ident)
             if self.rnd == "Second":
@@ -740,11 +742,11 @@ class HeadToHead:
                    and (tours.NAME_T Not Like '%juniors%')
                    ;""".format(
             sex,
-            dba.msaccess_date(tour_date_max),
+            oncourt.sql.msaccess_date(tour_date_max),
             match.first_player.ident,
             match.second_player.ident,
         )
-        with closing(dba.get_connect().cursor()) as cursor:
+        with closing(dbcon.get_connect().cursor()) as cursor:
             for (
                 rnd_name,
                 surf_name,

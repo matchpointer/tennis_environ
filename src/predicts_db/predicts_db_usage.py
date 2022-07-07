@@ -20,8 +20,9 @@ from datetime import date, timedelta
 from collections import defaultdict
 from pprint import pprint
 
+import oncourt.sql
 import stopwatch
-from oncourt import dba
+from oncourt import dbcon
 from predicts_db import predicts_db_decl
 from side import Side
 from stat_cont import WinLoss
@@ -247,7 +248,7 @@ def _read_match_score(sex: str, pid1: int, pid2: int, rec_date: date):
 
     min_date = rec_date - timedelta(days=1)
     max_date = rec_date + timedelta(days=2)
-    sql = """select games.ID1_G, games.ID2_G, games.RESULT_G                     
+    query = """select games.ID1_G, games.ID2_G, games.RESULT_G                     
              from games_{0} AS games
              where games.RESULT_G IS NOT NULL
                and games.DATE_G IS NOT NULL 
@@ -256,10 +257,10 @@ def _read_match_score(sex: str, pid1: int, pid2: int, rec_date: date):
                   (games.ID1_G = {2} and games.ID2_G = {1})
                )                   
           """.format(sex, pid1, pid2)
-    sql += dba.sql_dates_condition(min_date, max_date, dator='games.DATE_G')
-    sql += ";"
-    with closing(dba.get_connect().cursor()) as cursor:
-        cursor.execute(sql)
+    query += oncourt.sql.sql_dates_condition(min_date, max_date, dator='games.DATE_G')
+    query += ";"
+    with closing(dbcon.get_connect().cursor()) as cursor:
+        cursor.execute(query)
         row = cursor.fetchone()
     if row:
         winner_id = row[0]
@@ -417,7 +418,7 @@ if __name__ == "__main__":
         initialize()
         run_stat()
     elif args.run_matchresult:
-        dba.open_connect()
+        dbcon.open_connect()
         initialize()
         run_matchresult_flags()
-        dba.close_connect()
+        dbcon.close_connect()

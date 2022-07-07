@@ -4,10 +4,12 @@ from contextlib import closing
 from typing import DefaultDict, List, Tuple
 
 from loguru import logger as log
+
+import oncourt.sql
 import tennis_time as tt
 import tennis
 import bet
-from oncourt import dba
+from oncourt import dbcon
 
 SexBettor_YearWeeknum_DbOfferList = DefaultDict[
     Tuple[
@@ -80,7 +82,7 @@ def _initialize_sex(sex, min_date, max_date, bettor_id):
     можно записать как: ROUND(odds.TOTAL, 0) = (odds.TOTAL + 0.5)
     """
     company = bet.get_company_by_id(bettor_id)
-    sql = """select tours.DATE_T, odds.ID_T_O, Rounds.NAME_R,
+    query = """select tours.DATE_T, odds.ID_T_O, Rounds.NAME_R,
                     odds.ID1_O, odds.ID2_O, 
                     odds.K1, odds.K2,
                     odds.TOTAL, odds.KTM, odds.KTB
@@ -90,9 +92,9 @@ def _initialize_sex(sex, min_date, max_date, bettor_id):
                and odds.ID_R_O = Rounds.ID_R""".format(
         sex, bettor_id
     )
-    sql += dba.sql_dates_condition(min_date, max_date)
-    sql += " order by tours.DATE_T;"
-    with closing(dba.get_connect().cursor()) as cursor:
+    query += oncourt.sql.sql_dates_condition(min_date, max_date)
+    query += " order by tours.DATE_T;"
+    with closing(dbcon.get_connect().cursor()) as cursor:
         for (
             tour_dt,
             tour_id,
@@ -104,7 +106,7 @@ def _initialize_sex(sex, min_date, max_date, bettor_id):
             total_value,
             total_less_coef,
             total_great_coef,
-        ) in cursor.execute(sql):
+        ) in cursor.execute(query):
             date = tour_dt.date() if tour_dt else None
             rnd = tennis.Round(rnd_name)
             dboffer = bet.DbOffer(
@@ -134,7 +136,7 @@ def do_compare_bettors(sex, min_date=None, max_date=None):
             iswin = not left_win
         winloss.hit(iswin)
 
-    dba.open_connect()
+    dbcon.open_connect()
     tours = list(
         trmt.tours_generator(
             sex,
@@ -198,6 +200,6 @@ def do_compare_bettors(sex, min_date=None, max_date=None):
         progress.put_tour(tour)
         if progress.new_week_begining:
             print("{}".format(tour.year_weeknum))
-    dba.close_connect()
+    dbcon.close_connect()
     log.info("wl {}".format(wl))
     log.info("wl2 {}".format(wl2))

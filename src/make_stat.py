@@ -6,7 +6,7 @@ import argparse
 from loguru import logger as log
 import tournament as trmt
 import tennis_time as tt
-from oncourt import dba, extplayers
+from oncourt import dbcon, extplayers
 import ratings_std
 
 import qual_seeds
@@ -120,14 +120,14 @@ def do_stat():
     try:
         log.info(__file__ + " started sex:" + str(args.sex))
         start_datetime = datetime.datetime.now()
-        dba.open_connect()
+        dbcon.open_connect()
         ratings_std.initialize(sex=args.sex)
         qual_seeds.initialize()
         extplayers.initialize(yearsnum=18)
 
         matchstat_process(sex=args.sex)
 
-        dba.close_connect()
+        dbcon.close_connect()
         log.info(
             "{} finished within {}".format(
                 __file__, str(datetime.datetime.now() - start_datetime)

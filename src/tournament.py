@@ -8,8 +8,9 @@ from contextlib import closing
 import common as co
 from loguru import logger as log
 import file_utils as fu
+import oncourt.sql
 from surf import make_surf
-from oncourt import dba, read_db_helper
+from oncourt import dbcon, read_db_helper
 import qual_seeds
 import tennis_time as tt
 import score as sc
@@ -412,7 +413,7 @@ class SqlBuilder:
                 self.select_clause(mix=False)
                 + self.from_clause(mix=False)
                 + self.where_clause()
-                + dba.sql_dates_condition(self.min_date, self.max_date)
+                + oncourt.sql.sql_dates_condition(self.min_date, self.max_date)
         )
         if self.with_mix:
             result += (
@@ -420,7 +421,7 @@ class SqlBuilder:
                 + self.select_clause(mix=True)
                 + self.from_clause(mix=True)
                 + self.where_clause()
-                + dba.sql_dates_condition(self.min_date, self.max_date)
+                + oncourt.sql.sql_dates_condition(self.min_date, self.max_date)
             )
         result += self.orderby() + ";"
         return result
@@ -505,9 +506,9 @@ class SqlBuilder:
         return result
 
     def rows(self):
-        with closing(dba.get_connect().cursor()) as cursor:
+        with closing(dbcon.get_connect().cursor()) as cursor:
             cursor.execute(self.sql)
-            for row in dba.result_iter(cursor):
+            for row in dbcon.result_iter(cursor):
                 yield SqlBuilder.Row(*row)
 
 

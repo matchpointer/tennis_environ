@@ -1,5 +1,5 @@
 # -*- coding=utf-8 -*-
-""" database of DetailedScore records
+""" point-by-point match score
 """
 from collections import OrderedDict, namedtuple
 import copy
@@ -470,8 +470,6 @@ class DetailedGame(object):
     def __eq__(self, other):
         return self.state == other.state and self.points == other.points
 
-
-
     def __str__(self):
         # error_text(self.error)
         return "{}{}{}".format(
@@ -688,12 +686,8 @@ class DetailedScore(OrderedDict):
             err_txt = "all_err: {}".format(error_text(self.error))
         else:
             err_txt = ""
-        return (
-            ret_txt
-            + err_txt
-            + "\n"
-            + "\n".join([str(k) + ": " + str(v) for k, v in self.items()])
-        )
+        items_txt = "\n".join([f"{str(k)}: {str(v)}" for k, v in self.items()])
+        return f"{ret_txt}{err_txt}\n{items_txt}"
 
     def __eq__(self, other):
         return (
@@ -703,10 +697,11 @@ class DetailedScore(OrderedDict):
         )
 
     def tostring(self):
-        result = "err={}\n".format(self.error)
-        result += "ret={}\n".format(int(self.retired))
-        result += "len={}\n".format(len(self))
-        return result + "\n".join([str(k) + "=" + str(v) for k, v in self.items()])
+        err_txt = "err={}\n".format(self.error)
+        ret_txt = "ret={}\n".format(int(self.retired))
+        len_txt = "len={}\n".format(len(self))
+        items_txt = "\n".join([f"{str(k)}={str(v)}" for k, v in self.items()])
+        return f'{err_txt}{ret_txt}{len_txt}{items_txt}'
 
     @staticmethod
     def from_str(text):

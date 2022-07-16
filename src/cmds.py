@@ -35,8 +35,8 @@ class TennisCommandError(TennisError):
         result = ""
         comments = TennisError.__str__(self)
         if comments:
-            result += comments + " "
-        return result + str(self.cmd)
+            result += f"{comments} "
+        return f"{result}{str(self.cmd)}"
 
 
 class TennisDatabaseCommandError(TennisCommandError):
@@ -79,10 +79,10 @@ class Command:
 
     def __str__(self):
         if type(self.args) == str:
-            args_text = "(" + self.args + ")"
+            args_text = f"({self.args})"
         else:
             args_text = (
-                "(" + ", ".join([str(i) for i in self.args]) + ")" if self.args else ""
+                f"({', '.join([str(i) for i in self.args])})" if self.args else ""
             )
         if self.external:
             return (
@@ -317,9 +317,9 @@ class CommandSqlplus(Command):
 
     def __str__(self):
         result = Command.__str__(self)
-        result += "\n\tfetch: " + str(self.fetch)
+        result += f"\n\tfetch: {str(self.fetch)}"
         if self.plsql:
-            result += " \n\tplsql: " + self.plsql
+            result += f" \n\tplsql: {self.plsql}"
         return result
 
     def prepare_sql_file(self):
@@ -357,7 +357,7 @@ class CommandSqlplus(Command):
     def fire(self):
         try:
             self.prepare_sql_file()
-            log.debug("sqlplus firing: " + self.__str__())
+            log.debug(f"sqlplus firing: {self.__str__()}")
             Command.fire(self)
             time.sleep(0.6)
             if self.returned_value != 0:
@@ -448,7 +448,7 @@ class Commands:
         res = "Commands: [\n"
         for cmd in self.commands:
             res += "cmd: %s\n" % cmd
-        return res + "]"
+        return f"{res}]"
 
     def __getitem__(self, index):
         return self.commands[index]

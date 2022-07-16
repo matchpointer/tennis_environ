@@ -8,9 +8,8 @@ from contextlib import closing
 import common as co
 from loguru import logger as log
 import file_utils as fu
-import oncourt.sql
 from surf import make_surf
-from oncourt import dbcon, read_db_helper
+from oncourt import dbcon, read_db_helper, sql
 import qual_seeds
 import tennis_time as tt
 import score as sc
@@ -410,20 +409,20 @@ class SqlBuilder:
 
     def build(self):
         result = (
-                self.select_clause(mix=False)
-                + self.from_clause(mix=False)
-                + self.where_clause()
-                + oncourt.sql.sql_dates_condition(self.min_date, self.max_date)
+                f"{self.select_clause(mix=False)}"
+                f"{self.from_clause(mix=False)}"
+                f"{self.where_clause()}"
+                f"{sql.dates_condition(self.min_date, self.max_date)}"
         )
         if self.with_mix:
             result += (
                 "\nUNION \n"
-                + self.select_clause(mix=True)
-                + self.from_clause(mix=True)
-                + self.where_clause()
-                + oncourt.sql.sql_dates_condition(self.min_date, self.max_date)
+                f"{self.select_clause(mix=True)}"
+                f"{self.from_clause(mix=True)}"
+                f"{self.where_clause()}"
+                f"{sql.dates_condition(self.min_date, self.max_date)}"
             )
-        result += self.orderby() + ";"
+        result += f"{self.orderby()};"
         return result
 
     def orderby(self):
@@ -436,18 +435,18 @@ class SqlBuilder:
     def select_clause(self, mix):
         result = (
             "SELECT Rounds.NAME_R, Rounds.ID_R, Courts.NAME_C, tours.ID_T, \n"
-            + "  tours.NAME_T, tours.RANK_T, tours.DATE_T, tours.PRIZE_T, "
-            + "  tours.COUNTRY_T, \n"
+            "  tours.NAME_T, tours.RANK_T, tours.DATE_T, tours.PRIZE_T, "
+            "  tours.COUNTRY_T, \n"
         )
         if mix:
             result += (
                 "  fst_plr.ID_P, fst_plr.NAME_P, null, fst_plr.COUNTRY_P, \n"
-                + "  snd_plr.ID_P, snd_plr.NAME_P, null, snd_plr.COUNTRY_P"
+                "  snd_plr.ID_P, snd_plr.NAME_P, null, snd_plr.COUNTRY_P"
             )
         else:
             result += (
                 "  fst_plr.ID_P, fst_plr.NAME_P, fst_plr.DATE_P, fst_plr.COUNTRY_P, \n"
-                + "  snd_plr.ID_P, snd_plr.NAME_P, snd_plr.DATE_P, snd_plr.COUNTRY_P"
+                "  snd_plr.ID_P, snd_plr.NAME_P, snd_plr.DATE_P, snd_plr.COUNTRY_P"
             )
         if self.todaymode:
             result += ", today.RESULT, today.DATE_GAME \n"
@@ -460,7 +459,7 @@ class SqlBuilder:
         if mix:
             result += (
                 "Tours_mxt AS tours, "
-                + "Players_mxt AS fst_plr, Players_mxt AS snd_plr"
+                "Players_mxt AS fst_plr, Players_mxt AS snd_plr"
             )
             if self.todaymode:
                 result += ", today_mxt AS today"
@@ -470,36 +469,36 @@ class SqlBuilder:
         else:
             result += (
                 "Tours_{0} AS tours, "
-                + "Players_{0} AS fst_plr, "
-                + "Players_{0} AS snd_plr"
+                "Players_{0} AS fst_plr, "
+                "Players_{0} AS snd_plr"
             ).format(self.sex)
             if self.todaymode:
                 result += ", today_{0} AS today".format(self.sex)
             else:
                 result += ", games_{0} AS games".format(self.sex)
-        return result + "\n"
+        return f"{result}\n"
 
     def where_clause(self):
         result = (
             "WHERE tours.ID_C_T = Courts.ID_C \n"
-            + "\t and (tours.NAME_T Not Like '%juniors%') \n"
-            + "\t and (tours.NAME_T Not Like '%Wildcard%') \n"
+            "\t and (tours.NAME_T Not Like '%juniors%') \n"
+            "\t and (tours.NAME_T Not Like '%Wildcard%') \n"
         )
         if self.todaymode:
             result += (
                 "\t and today.ID1 = fst_plr.ID_P \n"
-                + "\t and today.ID2 = snd_plr.ID_P \n"
-                + "\t and fst_plr.NAME_P Not Like '%Unknown%'\n"
-                + "\t and snd_plr.NAME_P Not Like '%Unknown%'\n"
-                + "\t and today.TOUR = tours.ID_T \n"
-                + "\t and today.ROUND = Rounds.ID_R \n"
+                "\t and today.ID2 = snd_plr.ID_P \n"
+                "\t and fst_plr.NAME_P Not Like '%Unknown%'\n"
+                "\t and snd_plr.NAME_P Not Like '%Unknown%'\n"
+                "\t and today.TOUR = tours.ID_T \n"
+                "\t and today.ROUND = Rounds.ID_R \n"
             )
         else:
             result += (
                 "\t and games.ID1_G = fst_plr.ID_P \n"
-                + "\t and games.ID2_G = snd_plr.ID_P \n"
-                + "\t and games.ID_T_G = tours.ID_T \n"
-                + "\t and games.ID_R_G = Rounds.ID_R \n"
+                "\t and games.ID2_G = snd_plr.ID_P \n"
+                "\t and games.ID_T_G = tours.ID_T \n"
+                "\t and games.ID_R_G = Rounds.ID_R \n"
             )
         if not self.with_paired:
             result += "\t and (fst_plr.NAME_P Not Like '%/%') \n"

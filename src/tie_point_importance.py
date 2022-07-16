@@ -131,7 +131,7 @@ class PointCell(object):
         if self.importance is None:
             imp_text = ""
         else:
-            imp_text = " I: " + "{0:.2f}".format(self.importance)
+            imp_text = " I: {0:.2f}".format(self.importance)
         return "({},{}) {} {} P:{}{}".format(
             self.left_count,
             self.right_count,

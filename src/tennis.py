@@ -353,13 +353,13 @@ class Match:
 
     def __str__(self):
         return "{}{}{}{} - {}{}{}".format(
-            "" if self.date is None else str(self.date) + " ",
-            "" if self.rnd is None else str(self.rnd) + " ",
-            "" if not self.first_draw_status else "(" + self.first_draw_status + ") ",
+            "" if self.date is None else f"{self.date} ",
+            "" if self.rnd is None else f"{self.rnd} ",
+            "" if not self.first_draw_status else f"({self.first_draw_status}) ",
             self.first_player,
-            "" if not self.second_draw_status else "(" + self.second_draw_status + ") ",
+            "" if not self.second_draw_status else f"({self.second_draw_status}) ",
             self.second_player,
-            "" if not self.score else " " + str(self.score),
+            "" if not self.score else f" {self.score}",
         )
 
     def first_player_bet_chance(self):

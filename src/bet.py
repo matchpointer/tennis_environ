@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from typing import NamedTuple
 
 from loguru import logger as log
@@ -297,7 +298,7 @@ class Offer(object):
             self.total_coefs or "",
             self.win_coefs or "",
             self.sets_coefs or "",
-            ("\n\t" + str(self.handicap_coefs)) if self.handicap_coefs else "",
+            f"\n\t{str(self.handicap_coefs)}" if self.handicap_coefs else "",
         )
 
     def flip(self):
@@ -381,9 +382,6 @@ class DbOffer(Offer):
                 and self.second_player_id == other.first_player_id
             )
         )
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
 
 class Pick(object):
@@ -691,8 +689,7 @@ class FlatLimitedProfiter(FlatProfiter):
             self.sager.set_current_money(self.current_money())
 
     def __repr__(self):
-        result = super(FlatLimitedProfiter, self).__repr__()
-        return result + " " + str(self.sager)
+        return f"{super(FlatLimitedProfiter, self).__repr__()} {self.sager}"
 
     def __lt__(self, other):
         return self.roi_ratio() >= other.roi_ratio()

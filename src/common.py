@@ -20,8 +20,8 @@ from side import Side
 
 
 class PlatformNodes:
-    FIRST_NODE = "DESKTOP-M348O3P"
-    SECOND_NODE = "DESKTOP-HS8A105"
+    FIRST_NODE = "DESKTOP-first"
+    SECOND_NODE = "DESKTOP-second"
 
     @staticmethod
     def is_first_node():
@@ -178,17 +178,13 @@ class Struct(object):
         )
 
     def __repr__(self):
-        return (
-            self.__class__.__name__
-            + "("
-            + ",".join(
-                [
-                    "{}={}".format(name, repr(value))
-                    for name, value in self.__dict__.items()
-                ]
-            )
-            + ")"
+        kvs = ",".join(
+            [
+                "{}={}".format(name, repr(value))
+                for name, value in self.__dict__.items()
+            ]
         )
+        return f"{self.__class__.__name__}({kvs})"
 
     def __hash__(self):
         return hash(self.__str__())

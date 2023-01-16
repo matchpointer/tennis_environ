@@ -90,18 +90,18 @@ class Tournament:
 
     def has_qualification(self):
         return any(
-            [
+            (
                 (rnd.qualification() or rnd.pre_qualification())
                 for rnd in self.matches_from_rnd
-            ]
+            )
         )
 
     def has_main_draw(self):
         return any(
-            [
+            (
                 not (rnd.qualification() or rnd.pre_qualification())
                 for rnd in self.matches_from_rnd
-            ]
+            )
         )
 
     def has_round(self, rnd, paired=None):

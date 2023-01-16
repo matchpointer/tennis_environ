@@ -1,49 +1,35 @@
 # -*- coding=utf-8 -*-
 import pandas as pd
 from sklearn.utils.class_weight import compute_sample_weight
+from typing import Callable
 
 import common as co
 from clf_common import out, WeightMode
 
 
-def edit_column_value(df, column_name, value_fun):
-    def process_row(row):
-        value = row[column_name]
-        return value_fun(value)
-
-    df[column_name] = df.apply(process_row, axis=1)
-
-
-def replace_column_empty_value(df, column_name, replace_value=0):
-    def process_row(row):
-        value = row[column_name]
-        return replace_value if pd.isnull(value) else value
-
-    df[column_name] = df.apply(process_row, axis=1)
-
-
-def add_column(df, new_column_name, fun_by_row):
+def add_column(df: pd.DataFrame, new_column_name: str, fun_by_row: Callable):
     def process_row(row):
         return fun_by_row(row)
 
     df[new_column_name] = df.apply(process_row, axis=1)
 
 
-def edit_column(df, column_name, fun_by_fld):
-    def process_field(fld):
-        return fun_by_fld(fld)
-
-    df[column_name] = df[column_name].apply(process_field)
+def edit_column(df: pd.DataFrame, column_name: str, fun_by_fld: Callable):
+    df[column_name] = df[column_name].apply(fun_by_fld)
 
 
-def round_column(df, column_name, ndigits=0):
+def replace_column_empty_value(df: pd.DataFrame, column_name: str, replace_value=0):
+    edit_column(df, column_name, lambda val: replace_value if pd.isnull(val) else val)
+
+
+def round_column(df: pd.DataFrame, column_name: str, ndigits=0):
     def process_field(fld):
         return round(fld, ndigits)
 
     df[column_name] = df[column_name].apply(process_field)
 
 
-def add_weight_column(weight_mode: WeightMode, df, label_name):
+def add_weight_column(weight_mode: WeightMode, df: pd.DataFrame, label_name):
     if "weight" in df.columns:
         return
     if weight_mode == WeightMode.BALANCED:
@@ -54,7 +40,8 @@ def add_weight_column(weight_mode: WeightMode, df, label_name):
 
 
 def add_weighted_column(
-    df, new_column_name, fst_column_name, fst_weight, snd_column_name, snd_weight
+    df: pd.DataFrame, new_column_name, fst_column_name, fst_weight,
+    snd_column_name, snd_weight
 ):
     def process_row(row):
         return row[fst_column_name] * fst_weight + row[snd_column_name] * snd_weight
@@ -65,7 +52,7 @@ def add_weighted_column(
     df[new_column_name] = df.apply(process_row, axis=1)
 
 
-def with_nan_columns(df, columns=None, raise_ifnan=False):
+def with_nan_columns(df: pd.DataFrame, columns=None, raise_ifnan=False):
     """return list of column names with nan"""
     result = []
     check_columns = columns if columns else df.columns
@@ -80,11 +67,11 @@ def with_nan_columns(df, columns=None, raise_ifnan=False):
     return result
 
 
-def add_year_column(df, new_name="year"):
+def add_year_column(df: pd.DataFrame, new_name="year"):
     df[new_name] = pd.DatetimeIndex(df["date"]).year
 
 
-def make_decided_win_side_by_score(df, side, new_name):
+def make_decided_win_side_by_score(df: pd.DataFrame, side, new_name):
     """make sense decided_win_by side_player"""
 
     def process_row(row):
